@@ -41,6 +41,11 @@ static inline uint32_t inl(uint16_t port)
     return ret;
 }
 
+static inline void io_wait(void)
+{
+    outb(0x80, 0);
+}
+
 static inline void debug_putc(char c)
 {
     outb(0xE9, c);

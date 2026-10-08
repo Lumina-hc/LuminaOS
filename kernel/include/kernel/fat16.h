@@ -53,5 +53,6 @@ int fat16_write_file_in(uint16_t dir, const char* name, const void* data, uint32
 int fat16_delete_file(const char* name);
 int fat16_list_dir(fat16_entry_t* entries, int max_entries, int* out_count);
 int fat16_dir_total_size(uint16_t cluster, uint32_t* out);
+int fat16_get_file_size(const char* name, uint32_t* out_size);
 
 #endif

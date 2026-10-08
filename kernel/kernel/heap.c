@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 #define HEAP_START 0x100000
-#define HEAP_SIZE  0x200000
+#define HEAP_SIZE  0x400000
 #define HEAP_ALIGN 8
 #define HEAP_MIN_SPLIT 32
 

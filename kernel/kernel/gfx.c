@@ -1,9 +1,6 @@
 #include <kernel/gfx.h>
 #include <kernel/io.h>
-
-#define VBE_DISPI_INDEX 0x01CE
-#define VBE_DISPI_DATA  0x01CF
-#define VBE_ENABLE      0x04
+#include <kernel/pmm.h>
 
 #define PCI_CONFIG_ADDR 0xCF8
 #define PCI_CONFIG_DATA 0xCFC
@@ -22,7 +19,8 @@ static uint32_t cjk_cp[CJK_MAX_GLYPHS];
 static uint8_t cjk_glyph[CJK_MAX_GLYPHS][CJK_GLYPH_BYTES];
 static int cjk_count;
 
-#define BACK_BUFFER_ADDR 0x00400000
+#define BACK_BUFFER_ADDR 0x00600000
+#define BACK_BUFFER_SIZE 0x00200000
 
 static uint32_t* fb;
 static uint32_t* back;
@@ -34,16 +32,6 @@ static int win_clip_y;
 static int win_clip_w;
 static int win_clip_h;
 static int win_active;
-
-static void vbe_index(uint16_t idx)
-{
-    outw(VBE_DISPI_INDEX, idx);
-}
-
-static void vbe_data(uint16_t val)
-{
-    outw(VBE_DISPI_DATA, val);
-}
 
 static uint32_t pci_read_config(uint8_t bus, uint8_t dev, uint8_t func, uint8_t reg)
 {
@@ -98,7 +86,7 @@ static void font_read_cfg(int mapv, int plane, int seqmode, uint8_t* out)
 
     for (int c = 0; c < 256; c++)
         for (int row = 0; row < FONT_BYTES_PER_CHAR; row++)
-            out[c * FONT_BYTES_PER_CHAR + row] = *(const uint8_t*)(0xA0000 + c * 32 + row);
+            out[c * FONT_BYTES_PER_CHAR + row] = *(const uint8_t*)(uintptr_t)(0xA0000 + c * 32 + row);
 
     outb(0x3C4, 0x04); outb(0x3C5, save_sr5);
     outb(0x3C4, save_sr4);
@@ -125,27 +113,13 @@ static void font_init(void)
 
 void gfx_init(uint16_t width, uint16_t height)
 {
-    vbe_index(VBE_ENABLE);
-    vbe_data(0x0000);
-
     font_init();
 
-    vbe_index(0x01);
-    vbe_data(width);
-    vbe_index(0x02);
-    vbe_data(height);
-    vbe_index(0x03);
-    vbe_data(32);
-    vbe_index(0x07);
-    vbe_data(width);
-    vbe_index(0x04);
-    vbe_data(0x0000);
-    vbe_index(VBE_ENABLE);
-    vbe_data(0x41);
-
-    lfb = (uint32_t*)gfx_find_lfb();
+    lfb = (uint32_t*)(uintptr_t)gfx_find_lfb();
     gfx_w = width;
     gfx_h = height;
+    if (!back)
+        pmm_reserve(BACK_BUFFER_ADDR, BACK_BUFFER_SIZE);
     back = (uint32_t*)BACK_BUFFER_ADDR;
     fb = lfb;
 }
@@ -223,8 +197,6 @@ static void vga_text_mode_restore(void)
 
 void gfx_disable(void)
 {
-    vbe_index(VBE_ENABLE);
-    vbe_data(0x0000);
     vga_text_mode_restore();
     lfb = 0;
     gfx_w = 0;

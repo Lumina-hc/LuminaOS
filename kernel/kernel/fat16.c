@@ -426,6 +426,16 @@ int fat16_read_file(const char* name, void* buffer, uint32_t max_size, uint32_t*
     return fat16_read_file_in(fs.cur_cluster, name, buffer, max_size, out_size);
 }
 
+int fat16_get_file_size(const char* name, uint32_t* out_size)
+{
+    fat16_entry_t entry;
+    int found = fat16_dir_find(fs.cur_cluster, name, &entry, 0);
+    if (found != 1) return -1;
+    if (entry.attr & FAT16_ATTR_DIRECTORY) return -1;
+    if (out_size) *out_size = entry.size;
+    return 0;
+}
+
 int fat16_write_file_in(uint16_t dir, const char* name, const void* data, uint32_t size)
 {
     uint32_t cluster_size = fs.bytes_per_sector * fs.sectors_per_cluster;

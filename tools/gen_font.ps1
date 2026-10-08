@@ -1,7 +1,6 @@
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
 
-# Unicode code points of the small CJK subset (16x16 glyphs)
 $CPS = @(
     0x6587, 0x4EF6, 0x8BB0, 0x4E8B, 0x5173, 0x4E8E, 0x7CFB, 0x7EDF,
     0x91CD, 0x542F, 0x673A, 0x6B22, 0x8FCE, 0x4F7F, 0x7528, 0x64CD,
@@ -24,10 +23,10 @@ $stream = $null
 try {
     $stream = [System.IO.File]::Create($OUT)
     $bw = New-Object System.IO.BinaryWriter($stream)
-    $bw.Write([byte]0x4C) # 'L'
-    $bw.Write([byte]0x5A) # 'Z'
-    $bw.Write([byte]0x46) # 'F'
-    $bw.Write([byte]0x31) # '1'
+    $bw.Write([byte]0x4C)
+    $bw.Write([byte]0x5A)
+    $bw.Write([byte]0x46)
+    $bw.Write([byte]0x31)
     $bw.Write([uint16]$CPS.Count)
 
     foreach ($cp in $CPS) {

@@ -9,19 +9,20 @@
 #include <kernel/desktop.h>
 #include <kernel/sched.h>
 #include <kernel/timer.h>
+#include <kernel/isr.h>
 #include <stdint.h>
 
 extern void syscall_asm(void);
 extern void kernel_resume(void);
 
-static int sc_exit(int a, int b, int c, int d)
+static long sc_exit(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
     kernel_resume();
     return 0;
 }
 
-static int sc_putpixel(int x, int y, int color, int d)
+static long sc_putpixel(long x, long y, long color, long d)
 {
     (void)d;
     gfx_begin();
@@ -29,7 +30,7 @@ static int sc_putpixel(int x, int y, int color, int d)
     return 0;
 }
 
-static int sc_fill_rect(int x, int y, int w, int color)
+static long sc_fill_rect(long x, long y, long w, long color)
 {
     int h = (w >> 16) & 0xFFFF;
     w &= 0xFFFF;
@@ -38,7 +39,7 @@ static int sc_fill_rect(int x, int y, int w, int color)
     return 0;
 }
 
-static int sc_draw_rect(int x, int y, int w, int color)
+static long sc_draw_rect(long x, long y, long w, long color)
 {
     int h = (w >> 16) & 0xFFFF;
     w &= 0xFFFF;
@@ -47,21 +48,21 @@ static int sc_draw_rect(int x, int y, int w, int color)
     return 0;
 }
 
-static int sc_draw_char(int x, int y, int color, int d)
+static long sc_draw_char(long x, long y, long color, long d)
 {
     gfx_begin();
     gfx_draw_char(x, y, (char)d, (uint32_t)color, GFX_TRANSPARENT);
     return 0;
 }
 
-static int sc_draw_text(int x, int y, int p, int d)
+static long sc_draw_text(long x, long y, long p, long d)
 {
     gfx_begin();
-    gfx_draw_text(x, y, (const char*)p, (uint32_t)d, GFX_TRANSPARENT);
+    gfx_draw_text(x, y, (const char*)(uintptr_t)p, (uint32_t)d, GFX_TRANSPARENT);
     return 0;
 }
 
-static int sc_gfx_clear(int color, int b, int c, int d)
+static long sc_gfx_clear(long color, long b, long c, long d)
 {
     (void)b; (void)c; (void)d;
     gfx_begin();
@@ -69,66 +70,66 @@ static int sc_gfx_clear(int color, int b, int c, int d)
     return 0;
 }
 
-static int sc_gfx_flush(int a, int b, int c, int d)
+static long sc_gfx_flush(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
     gfx_flush();
     return 0;
 }
 
-static int sc_gfx_w(int a, int b, int c, int d)
+static long sc_gfx_w(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
     return gfx_width();
 }
 
-static int sc_gfx_h(int a, int b, int c, int d)
+static long sc_gfx_h(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
     return gfx_height();
 }
 
-static int sc_getchar(int a, int b, int c, int d)
+static long sc_getchar(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
     return keyboard_getchar();
 }
 
-static int sc_getchar_nb(int a, int b, int c, int d)
+static long sc_getchar_nb(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
     return keyboard_getchar_nonblock();
 }
 
-static int sc_mouse_x(int a, int b, int c, int d)
+static long sc_mouse_x(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
     return mouse_x();
 }
-static int sc_mouse_y(int a, int b, int c, int d)
+static long sc_mouse_y(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
     return mouse_y();
 }
 
-static int sc_mouse_l(int a, int b, int c, int d)
+static long sc_mouse_l(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
     return mouse_left();
 }
 
-static int sc_mouse_r(int a, int b, int c, int d)
+static long sc_mouse_r(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
     return mouse_right();
 }
 
-static int sc_mouse_click(int a, int b, int c, int d)
+static long sc_mouse_click(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
     if (!mouse_click_peek())
         return 0;
-    lsp_win_info_t wi;
+    win_info_t wi;
     desktop_win_info(&wi);
     int mx = mouse_x();
     int my = mouse_y();
@@ -136,33 +137,35 @@ static int sc_mouse_click(int a, int b, int c, int d)
         my >= wi.close_y && my < wi.close_y + wi.close_h)
         return 0;
     return mouse_click_consume();
-}static int sc_file_read(int a, int b, int c, int d)
+}
+
+static long sc_file_read(long a, long b, long c, long d)
 {
     (void)d;
     uint32_t sz;
     uint8_t buf[4096];
-    if (fat16_read_file((const char*)a, buf, sizeof(buf), &sz) != 0)
+    if (fat16_read_file((const char*)(uintptr_t)a, buf, sizeof(buf), &sz) != 0)
         return -1;
     if (sz > (uint32_t)c) sz = c;
     for (uint32_t i = 0; i < sz; i++)
-        ((uint8_t*)b)[i] = buf[i];
+        ((uint8_t*)(uintptr_t)b)[i] = buf[i];
     return (int)sz;
 }
 
-static int sc_file_write(int a, int b, int c, int d)
+static long sc_file_write(long a, long b, long c, long d)
 {
     (void)d;
-    return fat16_write_file((const char*)a, (const uint8_t*)b, (uint32_t)c);
+    return fat16_write_file((const char*)(uintptr_t)a, (const uint8_t*)(uintptr_t)b, (uint32_t)c);
 }
 
-static int sc_file_list(int a, int b, int c, int d)
+static long sc_file_list(long a, long b, long c, long d)
 {
     (void)b; (void)d;
     fat16_entry_t entries[64];
     int count = 0;
     if (fat16_list_dir(entries, 64, &count) != 0) return -1;
-    lsp_dir_entry_t* out = (lsp_dir_entry_t*)a;
-    int max = c / (int)sizeof(lsp_dir_entry_t);
+    dir_entry_t* out = (dir_entry_t*)(uintptr_t)a;
+    int max = c / (int)sizeof(dir_entry_t);
     int n = 0;
     for (int i = 0; i < count && n < max; i++) {
         int len = 0;
@@ -182,19 +185,19 @@ static int sc_file_list(int a, int b, int c, int d)
     return n;
 }
 
-static int sc_win_info(int a, int b, int c, int d)
+static long sc_win_info(long a, long b, long c, long d)
 {
     (void)b; (void)c; (void)d;
-    lsp_win_info_t* info = (lsp_win_info_t*)a;
+    win_info_t* info = (win_info_t*)(uintptr_t)a;
     if (!info) return -1;
     desktop_win_info(info);
     return 0;
 }
 
-static int sc_sysinfo(int a, int b, int c, int d)
+static long sc_sysinfo(long a, long b, long c, long d)
 {
     (void)b; (void)c; (void)d;
-    lsp_sysinfo_t* info = (lsp_sysinfo_t*)a;
+    sysinfo_t* info = (sysinfo_t*)(uintptr_t)a;
     if (!info) return -1;
     info->mem_total_kb = PMM_MAX_PHYS / 1024;
     info->mem_free_kb = (pmm_free_page_count() * PMM_PAGE_SIZE) / 1024;
@@ -204,13 +207,13 @@ static int sc_sysinfo(int a, int b, int c, int d)
     return 0;
 }
 
-static int sc_win_should_close(int a, int b, int c, int d)
+static long sc_win_should_close(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
     if (keyboard_getchar_nonblock() == 27)
         return 1;
     if (mouse_click_peek()) {
-        lsp_win_info_t wi;
+        win_info_t wi;
         desktop_win_info(&wi);
         int mx = mouse_x();
         int my = mouse_y();
@@ -223,7 +226,7 @@ static int sc_win_should_close(int a, int b, int c, int d)
     return 0;
 }
 
-static int sc_sleep(int ms, int b, int c, int d)
+static long sc_sleep(long ms, long b, long c, long d)
 {
     (void)b; (void)c; (void)d;
     if (ms < 0) ms = 0;
@@ -235,10 +238,10 @@ static int sc_sleep(int ms, int b, int c, int d)
 static char g_open_file[64];
 static int g_has_open_file = 0;
 
-static int sc_open_file(int a, int b, int c, int d)
+static long sc_open_file(long a, long b, long c, long d)
 {
     (void)b; (void)c; (void)d;
-    const char* src = (const char*)a;
+    const char* src = (const char*)(uintptr_t)a;
     int i = 0;
     while (src[i] && i < (int)sizeof(g_open_file) - 1) {
         g_open_file[i] = src[i];
@@ -249,11 +252,11 @@ static int sc_open_file(int a, int b, int c, int d)
     return 0;
 }
 
-static int sc_get_open_file(int a, int b, int c, int d)
+static long sc_get_open_file(long a, long b, long c, long d)
 {
     (void)b; (void)d;
     if (!g_has_open_file) return 0;
-    char* dst = (char*)a;
+    char* dst = (char*)(uintptr_t)a;
     int i = 0;
     while (g_open_file[i] && i < c - 1) {
         dst[i] = g_open_file[i];
@@ -276,7 +279,7 @@ int syscall_pending_file(char* out, int max)
     return i;
 }
 
-static int sc_cursor(int a, int b, int c, int d)
+static long sc_cursor(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
     gfx_begin();
@@ -285,7 +288,7 @@ static int sc_cursor(int a, int b, int c, int d)
     return 0;
 }
 
-typedef int (*sc_fn_t)(int, int, int, int);
+typedef long (*sc_fn_t)(long, long, long, long);
 
 static const sc_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYSCALL_EXIT]       = sc_exit,
@@ -319,13 +322,21 @@ static const sc_fn_t syscall_table[SYSCALL_COUNT] = {
 
 void syscall_init(void)
 {
-    idt_set_gate(0x80, (uint32_t)syscall_asm, 0x08, 0xEF);
+    idt_set_gate(0x80, (uint64_t)(uintptr_t)syscall_asm, 0x08, 0xEE);
 }
 
-int syscall_dispatch(int num, int a1, int a2, int a3, int a4)
+long syscall_dispatch(long num, long a1, long a2, long a3, long a4)
 {
     sched_note_yield();
     if (num < 0 || num >= SYSCALL_COUNT || !syscall_table[num])
         return -1;
     return syscall_table[num](a1, a2, a3, a4);
+}
+
+long syscall_asm_handler(isr_regs_t* regs)
+{
+    long ret = syscall_dispatch((long)regs->rax, (long)regs->rdi, (long)regs->rsi,
+                               (long)regs->rdx, (long)regs->rcx);
+    regs->rax = (uint64_t)ret;
+    return ret;
 }

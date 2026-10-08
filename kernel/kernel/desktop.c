@@ -2,8 +2,11 @@
 #include <kernel/gfx.h>
 #include <kernel/mouse.h>
 #include <kernel/system.h>
-#include <kernel/lsp.h>
+#include <kernel/proc.h>
 #include <kernel/syscall.h>
+#include <kernel/paging.h>
+#include <kernel/timer.h>
+#include <kernel/gdt.h>
 #include <stdint.h>
 
 #define FONT_W 8
@@ -13,16 +16,21 @@
 #define DESK_H 600
 #define TASKBAR_H 40
 
-#define WIN_X 100
-#define WIN_Y 80
-#define WIN_W 600
-#define WIN_H 440
-#define TITLE_H 30
+#define WIN_BASE_W 600
+#define WIN_BASE_H 440
+#define WIN_TITLE_H 30
+
+#define USER_BASE_ADDR 0x08048000
+#define USER_STACK_TOP 0x7FF00000
+#define USER_STACK_PAGES 16
+
+extern void enter_user_mode(uint64_t rip, uint64_t rsp, uint64_t cs, uint64_t ss, uint64_t rflags);
+extern void kernel_resume(void);
 
 typedef struct {
     const char* name;
     uint32_t color;
-    const char* lsp;
+    const char* elf;
     int action;
 } desktop_icon_t;
 
@@ -34,12 +42,12 @@ enum {
 };
 
 static const desktop_icon_t icons[] = {
-    { "文件",   0x4F7FBF, "FILES.LSP",   APP_LAUNCH },
-    { "记事",   0x3FAF6F, "NOTEPAD.LSP", APP_LAUNCH },
-    { "关于",   0xBF6F3F, "ABOUT.LSP",   APP_LAUNCH },
-    { "系统",   0x9F9FAF, "SYSTEM.LSP",  APP_LAUNCH },
-    { "重启",   0xAF4F4F, 0,             APP_REBOOT },
-    { "关机",   0x8F8FAF, 0,             APP_HALT  },
+    { "???",   0x4F7FBF, "FILES.ELF",   APP_LAUNCH },
+    { "???",   0x3FAF6F, "NOTEPAD.ELF", APP_LAUNCH },
+    { "???",   0xBF6F3F, "ABOUT.ELF",   APP_LAUNCH },
+    { "???",   0x9F9FAF, "SYSTEM.ELF",  APP_LAUNCH },
+    { "???",   0xAF4F4F, 0,             APP_REBOOT },
+    { "???",   0x8F8FAF, 0,             APP_HALT  },
 };
 #define ICON_COUNT ((int)(sizeof(icons) / sizeof(icons[0])))
 
@@ -139,46 +147,27 @@ static void dt_draw_taskbar(const char* user)
     gfx_draw_text(DESK_W - tw - 10, DESK_H - TASKBAR_H + 12, ubuf, 0xE0E0E0, 0x202020);
 }
 
-static void dt_draw_window(const char* title)
+static void dt_draw_window_frame(const char* title)
 {
-    gfx_fill_rect(WIN_X, WIN_Y, WIN_W, WIN_H, 0xF7F7F7);
-    gfx_draw_rect(WIN_X, WIN_Y, WIN_W, WIN_H, 0x404040);
+    int wx = 100, wy = 80, ww = WIN_BASE_W, wh = WIN_BASE_H;
+
+    gfx_fill_rect(wx, wy, ww, wh, 0xF7F7F7);
+    gfx_draw_rect(wx, wy, ww, wh, 0x404040);
 
     uint32_t c0 = 0x4040A0;
     uint32_t c1 = 0x28287A;
-    for (int yy = 0; yy < TITLE_H; yy++) {
-        int t = (yy * 255) / (TITLE_H - 1);
+    for (int yy = 0; yy < WIN_TITLE_H; yy++) {
+        int t = (yy * 255) / (WIN_TITLE_H - 1);
         int r = ((c0 >> 16) & 0xFF) + ((((c1 >> 16) & 0xFF) - ((c0 >> 16) & 0xFF)) * t / 255);
         int g = ((c0 >> 8) & 0xFF) + ((((c1 >> 8) & 0xFF) - ((c0 >> 8) & 0xFF)) * t / 255);
         int b = (c0 & 0xFF) + (((c1 & 0xFF) - (c0 & 0xFF)) * t / 255);
-        gfx_fill_rect(WIN_X + 1, WIN_Y + yy, WIN_W - 2, 1, (r << 16) | (g << 8) | b);
+        gfx_fill_rect(wx + 1, wy + yy, ww - 2, 1, (r << 16) | (g << 8) | b);
     }
-    gfx_draw_text(WIN_X + 8, WIN_Y + (TITLE_H - FONT_H) / 2, title, 0xFFFFFF, 0x34348C);
+    gfx_draw_text(wx + 8, wy + (WIN_TITLE_H - FONT_H) / 2, title, 0xFFFFFF, 0x34348C);
 
-    gfx_fill_rect(WIN_X + WIN_W - 26, WIN_Y + 5, 20, 18, 0xC04040);
-    gfx_fill_rect(WIN_X + WIN_W - 26, WIN_Y + 5, 20, 2, 0xE06060);
-    gfx_draw_text(WIN_X + WIN_W - 22, WIN_Y + 6, "X", 0xFFFFFF, 0xC04040);
-}
-
-static int dt_point_in(int px, int py, int x, int y, int w, int h)
-{
-    return px >= x && px < x + w && py >= y && py < y + h;
-}
-
-void desktop_win_info(lsp_win_info_t* info)
-{
-    info->win_x = WIN_X;
-    info->win_y = WIN_Y;
-    info->win_w = WIN_W;
-    info->win_h = WIN_H;
-    info->client_x = WIN_X + 1;
-    info->client_y = WIN_Y + TITLE_H;
-    info->client_w = WIN_W - 2;
-    info->client_h = WIN_H - TITLE_H - 1;
-    info->close_x = WIN_X + WIN_W - 26;
-    info->close_y = WIN_Y + 5;
-    info->close_w = 20;
-    info->close_h = 18;
+    gfx_fill_rect(wx + ww - 26, wy + 5, 20, 18, 0xC04040);
+    gfx_fill_rect(wx + ww - 26, wy + 5, 20, 2, 0xE06060);
+    gfx_draw_text(wx + ww - 22, wy + 6, "X", 0xFFFFFF, 0xC04040);
 }
 
 static void dt_prepare_win(const char* title, const char* user)
@@ -188,16 +177,42 @@ static void dt_prepare_win(const char* title, const char* user)
     for (int i = 0; i < ICON_COUNT; i++)
         dt_draw_icon(i, 0);
     dt_draw_taskbar(user);
-    dt_draw_window(title);
+    dt_draw_window_frame(title);
     dt_draw_cursor(mouse_x(), mouse_y());
 
-    int cx = WIN_X + 1;
-    int cy = WIN_Y + TITLE_H;
-    int cw = WIN_W - 2;
-    int ch = WIN_H - TITLE_H - 1;
+    int cx = 101;
+    int cy = 80 + WIN_TITLE_H;
+    int cw = WIN_BASE_W - 2;
+    int ch = WIN_BASE_H - WIN_TITLE_H - 1;
     gfx_set_window(cx, cy, cw, ch);
     gfx_fill_rect(0, 0, cw, ch, 0x202020);
     gfx_flush();
+}
+
+static int dt_point_in(int px, int py, int x, int y, int w, int h)
+{
+    return px >= x && px < x + w && py >= y && py < y + h;
+}
+
+void desktop_win_info(win_info_t* info)
+{
+    info->win_x = 100;
+    info->win_y = 80;
+    info->win_w = WIN_BASE_W;
+    info->win_h = WIN_BASE_H;
+    info->client_x = 101;
+    info->client_y = 80 + WIN_TITLE_H;
+    info->client_w = WIN_BASE_W - 2;
+    info->client_h = WIN_BASE_H - WIN_TITLE_H - 1;
+    info->close_x = 100 + WIN_BASE_W - 26;
+    info->close_y = 85;
+    info->close_w = 20;
+    info->close_h = 18;
+}
+
+static void dbg_out(const char* msg) {
+    for (const char* p = msg; *p; p++)
+        __asm__ volatile ("outb %0, $0xE9" :: "a"((uint8_t)*p));
 }
 
 static void dt_run_app(const char* title, const char* path, const char* user)
@@ -205,19 +220,30 @@ static void dt_run_app(const char* title, const char* path, const char* user)
     (void)user;
     dt_prepare_win(title, user);
 
-    int r = lsp_load(path);
+    proc_t* proc = proc_create(path, title);
+    if (!proc) {
+        dbg_out("E[proc_fail]");
+        gfx_clear_window();
+        gfx_flush();
+        return;
+    }
+
+    proc_set_current(proc);
+
+    uint64_t saved_cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(saved_cr3));
+    paging_switch_user_pt(proc->page_dir_phys);
+
+    dbg_out("D[enter_umode]");
+    enter_user_mode(proc->entry_eip, proc->user_esp,
+                    GDT_USER_CS | 3, GDT_USER_DS | 3, 0x202);
+
+    paging_switch_user_pt(saved_cr3);
+
     gfx_clear_window();
     gfx_cursor_reset();
-    (void)r;
 
-    char open_file[64];
-    if (syscall_pending_file(open_file, sizeof(open_file)) > 0) {
-        dt_prepare_win("记事本", user);
-        r = lsp_load("NOTEPAD.LSP");
-        gfx_clear_window();
-        gfx_cursor_reset();
-        (void)r;
-    }
+    proc_destroy(proc);
 }
 
 int desktop_run(int fs_ready, const char* user)
@@ -245,7 +271,7 @@ int desktop_run(int fs_ready, const char* user)
                     } else if (icons[i].action == APP_HALT) {
                         system_halt();
                     } else if (icons[i].action == APP_LAUNCH) {
-                        dt_run_app(icons[i].name, icons[i].lsp, user);
+                        dt_run_app(icons[i].name, icons[i].elf, user);
                         gfx_cursor_reset();
                     }
                     dirty = 1;

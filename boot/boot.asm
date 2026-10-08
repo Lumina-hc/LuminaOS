@@ -35,6 +35,10 @@ start:
     mov ax, 0x0003
     int 0x10
 
+    mov ax, 0x4F02
+    mov bx, 0x4143
+    int 0x10
+
     mov si, msg_boot
     call print_string
 

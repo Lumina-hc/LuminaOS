@@ -10,6 +10,7 @@
 #define GDT_TSS       0x28
 
 void gdt_init(void);
-void tss_set_stack(uint32_t esp0);
+void tss_set_stack(uint64_t rsp0);
+void tss_set_kernel_stack(uint64_t rsp);
 
 #endif

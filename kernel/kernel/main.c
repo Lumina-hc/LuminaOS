@@ -14,11 +14,15 @@
 #include <kernel/gfx.h>
 #include <kernel/mouse.h>
 #include <kernel/desktop.h>
-#include <kernel/lsp.h>
+#include <kernel/proc.h>
+#include <kernel/paging.h>
+#include <kernel/gdt.h>
 #include <kernel/io.h>
 #include <kernel/timer.h>
 #include <kernel/sched.h>
 #include <stdint.h>
+
+extern void enter_user_mode(uint64_t rip, uint64_t rsp, uint64_t cs, uint64_t ss, uint64_t rflags);
 
 static int str_equ(const char* a, const char* b)
 {
@@ -62,7 +66,7 @@ static void print_uint(uint32_t value)
 static void print_banner(void)
 {
     tty_puts("============================================\n");
-    tty_puts("         LuminaOS v0.7.1 - 32-bit\n");
+    tty_puts("         LuminaOS v0.7.1 - 64-bit\n");
     tty_puts("============================================\n\n");
     tty_puts("Type 'help' for commands\n\n");
 }
@@ -474,19 +478,37 @@ static void cmd_ui(const char* arg)
 static void cmd_run(const char* path)
 {
     if (!fs_ready) { tty_puts("Filesystem not ready\n"); return; }
-    if (!*path) { tty_puts("Usage: run <file.lsp>\n"); return; }
+    if (!*path) { tty_puts("Usage: run <file.elf>\n"); return; }
 
     gfx_init(800, 600);
     mouse_init();
     gfx_begin();
 
-    int r = lsp_load(path);
+    proc_t* proc = proc_create(path, path);
+    if (!proc) {
+        gfx_disable();
+        tty_clear();
+        print_banner();
+        tty_puts("Failed to load program\n");
+        return;
+    }
+
+    proc_set_current(proc);
+
+    uint64_t saved_cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(saved_cr3));
+    paging_switch_user_pt(proc->page_dir_phys);
+
+    enter_user_mode(proc->entry_eip, proc->user_esp,
+                    GDT_USER_CS | 3, GDT_USER_DS | 3, 0x202);
+
+    paging_switch_user_pt(saved_cr3);
+
+    proc_destroy(proc);
 
     gfx_disable();
     tty_clear();
     print_banner();
-    if (r != 0)
-        tty_puts("Failed to load program\n");
 }
 
 static void print_prompt(void)
@@ -511,6 +533,8 @@ void kernel_main(uint8_t boot_drive)
 {
     (void)boot_drive;
 
+    __asm__ volatile ("cli");
+
     tty_init();
     gdt_init();
     idt_init();
@@ -526,6 +550,8 @@ void kernel_main(uint8_t boot_drive)
     timer_init();
     sched_init();
     syscall_init();
+
+    __asm__ volatile ("sti");
 
     print_banner();
 
@@ -627,7 +653,7 @@ void kernel_main(uint8_t boot_drive)
         else if (str_equ(cmd, "ver"))
         {
             tty_puts("LuminaOS v0.7.1\n");
-            tty_puts("Architecture: i686 (32-bit)\n");
+            tty_puts("Architecture: x86_64 (64-bit)\n");
             tty_puts("Kernel: Hybrid\n");
             tty_puts("Filesystem: FAT16\n");
         }

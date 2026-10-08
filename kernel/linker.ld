@@ -1,4 +1,5 @@
-OUTPUT_FORMAT("elf32-i386")
+OUTPUT_FORMAT("elf64-x86-64")
+OUTPUT_ARCH(i386:x86-64)
 ENTRY(_start)
 
 SECTIONS
@@ -7,20 +8,24 @@ SECTIONS
 
     .text : {
         *(.text)
+        *(.text.*)
     }
 
     .rodata : {
-        *(.rodata*)
+        *(.rodata)
+        *(.rodata.*)
     }
 
     .data : {
         *(.data)
+        *(.data.*)
     }
 
     .bss : {
         bss_start = .;
         *(COMMON)
         *(.bss)
+        *(.bss.*)
         bss_end = .;
     }
 }
