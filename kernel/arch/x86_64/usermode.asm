@@ -13,6 +13,7 @@ saved_rsp:  resq 1
 saved_rbx:  resq 1
 saved_rbp:  resq 1
 saved_r12:  resq 1
+saved_rflags: resq 1
 user_rsp:   resq 1
 user_rflags: resq 1
 
@@ -23,6 +24,8 @@ enter_user_mode:
     mov [rel saved_rbx], rbx
     mov [rel saved_rbp], rbp
     mov [rel saved_r12], r12
+    pushfq
+    pop qword [rel saved_rflags]
 
     mov [rel user_rsp], rsi
     mov [rel user_rflags], r8
@@ -48,15 +51,11 @@ enter_user_mode:
     iretq
 
 kernel_resume:
-    pushfq
-    pop rax
     cli
-    push rax
     call sched_user_exit
-    pop rax
 
     mov rsp, [rel saved_rsp]
-    push rax
+    push qword [rel saved_rflags]
     popfq
 
     mov rbx, [rel saved_rbx]
