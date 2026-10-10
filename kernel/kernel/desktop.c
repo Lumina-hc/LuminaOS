@@ -43,12 +43,12 @@ enum {
 };
 
 static const desktop_icon_t icons[] = {
-    { "???",   0x4F7FBF, "FILES.ELF",   APP_LAUNCH },
-    { "???",   0x3FAF6F, "NOTEPAD.ELF", APP_LAUNCH },
-    { "???",   0xBF6F3F, "ABOUT.ELF",   APP_LAUNCH },
-    { "???",   0x9F9FAF, "SYSTEM.ELF",  APP_LAUNCH },
-    { "???",   0xAF4F4F, 0,             APP_REBOOT },
-    { "???",   0x8F8FAF, 0,             APP_HALT  },
+    { "Files",    0x4F7FBF, "FILES.ELF",   APP_LAUNCH },
+    { "Notepad",  0x3FAF6F, "NOTEPAD.ELF", APP_LAUNCH },
+    { "About",    0xBF6F3F, "ABOUT.ELF",   APP_LAUNCH },
+    { "System",   0x9F9FAF, "SYSTEM.ELF",  APP_LAUNCH },
+    { "Reboot",   0xAF4F4F, 0,             APP_REBOOT },
+    { "Shutdown", 0x8F8FAF, 0,             APP_HALT  },
 };
 #define ICON_COUNT ((int)(sizeof(icons) / sizeof(icons[0])))
 
