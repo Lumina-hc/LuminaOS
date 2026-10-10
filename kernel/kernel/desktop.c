@@ -1,6 +1,7 @@
 #include <kernel/desktop.h>
 #include <kernel/gfx.h>
 #include <kernel/mouse.h>
+#include <kernel/keyboard.h>
 #include <kernel/system.h>
 #include <kernel/proc.h>
 #include <kernel/syscall.h>
@@ -255,6 +256,10 @@ int desktop_run(int fs_ready, const char* user)
     int dirty = 1;
 
     while (1) {
+        int k = keyboard_getchar_nonblock();
+        if (k == '\033')
+            return 0;
+
         int mx = mouse_x();
         int my = mouse_y();
         if (mx != prev_x || my != prev_y) dirty = 1;

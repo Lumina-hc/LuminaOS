@@ -573,6 +573,13 @@ void kernel_main(uint8_t boot_drive)
         tty_puts("FAT16 init failed (disk I/O only)\n\n");
     }
 
+    gfx_init(800, 600);
+    mouse_init();
+    desktop_run(fs_ready, cur_user);
+    gfx_disable();
+    tty_clear();
+    print_banner();
+
     char cmd[128];
     int cmd_pos = 0;
 
