@@ -1,6 +1,7 @@
 #include <kernel/gfx.h>
 #include <kernel/io.h>
 #include <kernel/pmm.h>
+#include <kernel/font_ascii.h>
 
 #define PCI_CONFIG_ADDR 0xCF8
 #define PCI_CONFIG_DATA 0xCFC
@@ -107,8 +108,9 @@ static void font_init(void)
                 return;
         }
     }
-    for (uint32_t i = 0; i < sizeof(font); i++)
-        font[i] = 0;
+    for (int c = 0x20; c <= 0x7F; c++)
+        for (int i = 0; i < FONT_BYTES_PER_CHAR; i++)
+            font[c * FONT_BYTES_PER_CHAR + i] = gfx_ascii_font[(c - 0x20) * FONT_BYTES_PER_CHAR + i];
 }
 
 void gfx_init(uint16_t width, uint16_t height)
