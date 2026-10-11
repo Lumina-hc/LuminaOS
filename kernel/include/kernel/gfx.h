@@ -23,6 +23,7 @@ void gfx_flush(void);
 void gfx_set_window(int x, int y, int w, int h);
 void gfx_clear_window(void);
 void gfx_draw_cursor_abs(int x, int y);
+void gfx_cursor_show(int x, int y);
 void gfx_cursor_reset(void);
 int gfx_window_w(void);
 int gfx_window_h(void);

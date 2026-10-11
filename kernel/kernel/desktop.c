@@ -78,7 +78,7 @@ static int dt_str_len(const char* s)
 
 static void dt_draw_cursor(int x, int y)
 {
-    gfx_draw_cursor_abs(x, y);
+    gfx_cursor_show(x, y);
 }
 
 static void dt_draw_wallpaper(void)

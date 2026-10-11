@@ -487,3 +487,9 @@ void gfx_draw_cursor_abs(int x, int y)
     cur_last_x = x;
     cur_last_y = y;
 }
+
+void gfx_cursor_show(int x, int y)
+{
+    fb = lfb;
+    gfx_draw_cursor_abs(x, y);
+}
