@@ -255,6 +255,7 @@ int desktop_run(int fs_ready, const char* user)
     int prev_x = -1;
     int prev_y = -1;
     int dirty = 1;
+    int last_hover = -2;
 
     while (1) {
         int k = keyboard_getchar_nonblock();
@@ -263,9 +264,16 @@ int desktop_run(int fs_ready, const char* user)
 
         int mx = mouse_x();
         int my = mouse_y();
-        if (mx != prev_x || my != prev_y) dirty = 1;
+
+        int hover = -1;
+        for (int i = 0; i < ICON_COUNT; i++)
+            if (dt_point_in(mx, my, icon_x(i), icon_y(i), ICON_W, ICON_H + ICON_LABEL_H)) { hover = i; break; }
+
+        int moved = (mx != prev_x || my != prev_y);
         prev_x = mx;
         prev_y = my;
+
+        if (hover != last_hover) { dirty = 1; last_hover = hover; }
 
         int left = mouse_click_consume();
         if (left) {
@@ -293,15 +301,16 @@ int desktop_run(int fs_ready, const char* user)
             gfx_begin();
             dt_draw_wallpaper();
 
-            for (int i = 0; i < ICON_COUNT; i++) {
-                int hover = dt_point_in(mx, my, icon_x(i), icon_y(i), ICON_W, ICON_H + ICON_LABEL_H);
-                dt_draw_icon(i, hover);
-            }
+            for (int i = 0; i < ICON_COUNT; i++)
+                dt_draw_icon(i, i == hover);
 
             dt_draw_taskbar(user);
             gfx_flush();
+            gfx_cursor_reset();
             dt_draw_cursor(mx, my);
             dirty = 0;
+        } else if (moved) {
+            dt_draw_cursor(mx, my);
         }
     }
 }
