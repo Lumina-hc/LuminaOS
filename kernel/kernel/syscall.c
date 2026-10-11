@@ -145,7 +145,7 @@ static long sc_file_read(long a, long b, long c, long d)
 {
     (void)d;
     uint32_t sz;
-    uint8_t buf[4096];
+    static uint8_t buf[4096];
     if (fat16_read_file((const char*)(uintptr_t)a, buf, sizeof(buf), &sz) != 0)
         return -1;
     if (sz > (uint32_t)c) sz = c;

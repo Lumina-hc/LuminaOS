@@ -527,6 +527,7 @@ static void print_prompt(void)
     tty_puts("]> ");
 }
 
+#define SYSCALL_STACK_SIZE (32 * 1024)
 static uint32_t syscall_stack;
 
 void kernel_main(uint8_t boot_drive)
@@ -545,8 +546,8 @@ void kernel_main(uint8_t boot_drive)
     pmm_init();
     heap_init();
     paging_init();
-    syscall_stack = pmm_alloc_zero();
-    tss_set_stack(syscall_stack + 4096);
+    syscall_stack = (uint32_t)(uintptr_t)kmalloc(SYSCALL_STACK_SIZE);
+    tss_set_stack((uint64_t)syscall_stack + SYSCALL_STACK_SIZE);
     timer_init();
     sched_init();
     syscall_init();
