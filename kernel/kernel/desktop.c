@@ -277,6 +277,9 @@ int desktop_run(int fs_ready, const char* user)
                         system_halt();
                     } else if (icons[i].action == APP_LAUNCH) {
                         dt_run_app(icons[i].name, icons[i].elf, user);
+                        char pending[64];
+                        if (syscall_pending_file(pending, sizeof(pending)) > 0)
+                            dt_run_app("Notepad", "NOTEPAD.ELF", user);
                         gfx_cursor_reset();
                     }
                     dirty = 1;
