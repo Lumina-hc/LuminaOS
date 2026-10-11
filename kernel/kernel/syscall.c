@@ -74,6 +74,8 @@ static long sc_gfx_flush(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
     gfx_flush();
+    gfx_cursor_reset();
+    gfx_draw_cursor_abs(mouse_x(), mouse_y());
     return 0;
 }
 

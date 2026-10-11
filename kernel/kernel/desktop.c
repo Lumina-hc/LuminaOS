@@ -179,7 +179,6 @@ static void dt_prepare_win(const char* title, const char* user)
         dt_draw_icon(i, 0);
     dt_draw_taskbar(user);
     dt_draw_window_frame(title);
-    dt_draw_cursor(mouse_x(), mouse_y());
 
     int cx = 101;
     int cy = 80 + WIN_TITLE_H;
@@ -188,6 +187,8 @@ static void dt_prepare_win(const char* title, const char* user)
     gfx_set_window(cx, cy, cw, ch);
     gfx_fill_rect(0, 0, cw, ch, 0x202020);
     gfx_flush();
+    gfx_cursor_reset();
+    dt_draw_cursor(mouse_x(), mouse_y());
 }
 
 static int dt_point_in(int px, int py, int x, int y, int w, int h)
@@ -298,8 +299,8 @@ int desktop_run(int fs_ready, const char* user)
             }
 
             dt_draw_taskbar(user);
-            dt_draw_cursor(mx, my);
             gfx_flush();
+            dt_draw_cursor(mx, my);
             dirty = 0;
         }
     }
