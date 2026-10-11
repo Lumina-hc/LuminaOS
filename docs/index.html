@@ -94,7 +94,7 @@
 
     <div class="hero">
         <h1>Lumina<span>OS</span></h1>
-        <p data-en="A hobby operating system for i386 built from scratch — bootloader, kernel, desktop, and LSP apps." data-zh="从零构建的 i386 兴趣操作系统 —— 引导程序、内核、桌面环境和 LSP 应用。">A hobby operating system for i386 built from scratch — bootloader, kernel, desktop, and LSP apps.</p>
+        <p data-en="A hobby operating system for x86-64 built from scratch — bootloader, kernel, desktop, and ELF64 apps." data-zh="从零构建的 x86-64 兴趣操作系统 —— 引导程序、内核、桌面环境和 ELF64 应用。">A hobby operating system for x86-64 built from scratch — bootloader, kernel, desktop, and ELF64 apps.</p>
         <a href="https://github.com/Lumina-hc/LuminaOS" class="btn btn-primary" data-en="View on GitHub" data-zh="GitHub 查看">View on GitHub</a>
         <a href="#build" class="btn btn-outline" data-en="Build Now" data-zh="立即构建">Build Now</a>
     </div>
@@ -104,7 +104,7 @@
         <div class="features">
             <div class="feature">
                 <h3 data-en="Custom Bootloader" data-zh="自定义引导程序">Custom Bootloader</h3>
-                <p data-en="Multiboot-compliant bootloader entering 32-bit protected mode." data-zh="兼容 Multiboot 的引导程序，进入 32 位保护模式。">Multiboot-compliant bootloader entering 32-bit protected mode.</p>
+                <p data-en="Boots a 1.44 MB floppy straight into 64-bit long mode." data-zh="从 1.44 MB 软盘直接引导进入 64 位长模式。">Boots a 1.44 MB floppy straight into 64-bit long mode.</p>
             </div>
             <div class="feature">
                 <h3 data-en="Memory Management" data-zh="内存管理">Memory Management</h3>
@@ -112,15 +112,15 @@
             </div>
             <div class="feature">
                 <h3 data-en="Desktop Environment" data-zh="桌面环境">Desktop Environment</h3>
-                <p data-en="VGA graphics with a windowed desktop and mouse support." data-zh="VGA 图形驱动，窗口化桌面，支持鼠标。">VGA graphics with a windowed desktop and mouse support.</p>
+                <p data-en="VBE graphics (800x600) with a windowed desktop, icons, and mouse support." data-zh="VBE 图形（800x600），窗口化桌面、图标和鼠标支持。">VBE graphics (800x600) with a windowed desktop, icons, and mouse support.</p>
             </div>
             <div class="feature">
                 <h3 data-en="FAT16 Filesystem" data-zh="FAT16 文件系统">FAT16 Filesystem</h3>
                 <p data-en="Full FAT16 support on IDE disk images." data-zh="IDE 磁盘镜像上的完整 FAT16 支持。">Full FAT16 support on IDE disk images.</p>
             </div>
             <div class="feature">
-                <h3 data-en="LSP Applications" data-zh="LSP 应用程序">LSP Applications</h3>
-                <p data-en="Run user-space apps compiled to the custom LSP format." data-zh="运行编译为自定义 LSP 格式的用户空间应用。">Run user-space apps compiled to the custom LSP format.</p>
+                <h3 data-en="ELF64 Applications" data-zh="ELF64 应用程序">ELF64 Applications</h3>
+                <p data-en="Run user-space apps compiled to ELF64 in ring 3, loaded by the kernel." data-zh="运行编译为 ELF64 的用户态（ring 3）应用，由内核加载。">Run user-space apps compiled to ELF64 in ring 3, loaded by the kernel.</p>
             </div>
             <div class="feature">
                 <h3 data-en="Built-in Apps" data-zh="内置应用">Built-in Apps</h3>
@@ -133,8 +133,8 @@
         <h2 data-en="Screenshots" data-zh="截图">Screenshots</h2>
         <div class="screenshots">
             <div class="screenshot">
-                <img src="cmd.png" alt="Shell">
-                <p data-en="Shell" data-zh="终端">Shell</p>
+                <img src="cmd.png" alt="Notepad">
+                <p data-en="Notepad" data-zh="记事本">Notepad</p>
             </div>
             <div class="screenshot">
                 <img src="ui.png" alt="Desktop">
@@ -147,7 +147,7 @@
         <h2 data-en="Build" data-zh="构建">Build</h2>
         <div class="install-steps">
             <ol>
-                <li data-en="Install dependencies:" data-zh="安装依赖：">Install dependencies: <code>NASM</code> <code>i686-elf-gcc</code> <code>QEMU</code></li>
+                <li data-en="Install dependencies:" data-zh="安装依赖：">Install dependencies: <code>NASM</code> <code>x86_64-elf-gcc</code> <code>QEMU</code></li>
                 <li data-en="Clone the repository:" data-zh="克隆仓库：">Clone the repository: <code>git clone https://github.com/Lumina-hc/LuminaOS.git</code></li>
                 <li data-en="Enter the directory:" data-zh="进入目录：">Enter the directory: <code>cd LuminaOS</code></li>
                 <li data-en="Build:" data-zh="构建：">Build: <code>.\build.ps1</code></li>
