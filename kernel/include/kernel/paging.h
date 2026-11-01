@@ -31,6 +31,8 @@ uint64_t paging_map_page(uint64_t vaddr, uint64_t phys, uint64_t flags);
 void paging_unmap_page(uint64_t vaddr);
 uint64_t paging_alloc_user_pages(uint64_t vaddr, uint64_t pages);
 
+void paging_map_region(uint64_t base, uint64_t size);
+
 uint64_t paging_map_user_page(uint64_t vaddr, uint64_t phys, uint64_t flags);
 void paging_unmap_user_page(uint64_t vaddr);
 

@@ -2,6 +2,8 @@
 #include <kernel/isr.h>
 #include <kernel/io.h>
 #include <kernel/tty.h>
+#include <kernel/proc.h>
+#include <kernel/desktop.h>
 
 extern void isr0(void);
 extern void isr1(void);
@@ -62,7 +64,52 @@ void isr_handler(isr_regs_t* regs)
     __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
     reg64("cr2  ", cr2);
 
-    for (;;) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    reg64("cr3  ", cr3);
+
+    desktop_dbg_dump();
+
+    proc_t* cp = proc_current();
+    if (cp) {
+        reg64("curpid ", (uint64_t)(uint32_t)cp->pid);
+        tty_puts("curname="); tty_puts(cp->name); tty_puts("\n");
+        reg64("curstate ", (uint64_t)cp->state);
+        reg64("curentry ", cp->entry_eip);
+        reg64("curesp ", cp->user_esp);
+        reg64("curpdir ", cp->page_dir_phys);
+        reg64("curhas ", (uint64_t)(uint32_t)cp->has_ctx);
+        reg64("curctxrip ", cp->ctx.rip);
+        reg64("curctxrsp ", cp->ctx.rsp);
+    } else {
+        tty_puts("curpid =none\n");
+    }
+
+    for (int i = 0; i < MAX_PROCS; i++) {
+        proc_t* q = proc_at(i);
+        if (!q || q->state == PROC_UNUSED) continue;
+        tty_puts("  pid=");
+        tty_puts(q->name);
+        tty_puts("\n");
+        reg64("  id ", (uint64_t)(uint32_t)q->pid);
+        reg64("  state ", (uint64_t)q->state);
+        reg64("  ctxrip ", q->ctx.rip);
+        reg64("  ctxrsp ", q->ctx.rsp);
+        reg64("  entry ", q->entry_eip);
+        reg64("  pdir ", q->page_dir_phys);
+    }
+
+    if ((regs->cs & 3) == 3 && regs->rsp < 0x7FF00000ULL && regs->rsp >= 0x7FF00000ULL - 0x10000ULL) {
+        uint64_t* sp = (uint64_t*)(uintptr_t)regs->rsp;
+        reg64("  [rsp] ", *sp);
+        if ((regs->rsp & 0xFFF) <= 0xFF0ULL) {
+            reg64("  [rsp+8] ", sp[1]);
+            reg64("  [rsp+16] ", sp[2]);
+            reg64("  [rsp+24] ", sp[3]);
+        }
+    }
+
+    while (1) {
         __asm__ volatile ("cli");
         __asm__ volatile ("hlt");
     }

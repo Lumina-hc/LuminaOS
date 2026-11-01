@@ -3,10 +3,9 @@ default abs
 section .text
 
 global _start
+global efi_entry
 extern bss_start, bss_end
 extern kernel_main
-
-boot_drive_addr equ 0x7C40
 
 _start:
     xor ax, ax
@@ -48,7 +47,9 @@ protected_mode:
     jmp 0x08:long_mode
 
 BITS 64
+efi_entry:
 long_mode:
+    xor edi, edi
     mov ax, 0x10
     mov ds, ax
     mov es, ax
@@ -59,7 +60,6 @@ long_mode:
     mov rsp, stack_top
     xor ebp, ebp
 
-    movzx edi, byte [boot_drive_addr]
     call kernel_main
 
 .hang:

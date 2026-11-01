@@ -1,5 +1,9 @@
 #include <kernel/sched.h>
 #include <kernel/timer.h>
+#include <kernel/proc.h>
+#include <kernel/isr.h>
+
+extern void kernel_resume(void);
 
 static volatile int user_active;
 static volatile uint32_t user_start_tick;
@@ -51,8 +55,29 @@ void sched_preempt_ack(void)
 
 void sched_note_yield(void)
 {
-    if (user_active) {
-        user_start_tick = timer_ticks();
-        preempt_pending = 0;
+    user_start_tick = timer_ticks();
+    preempt_pending = 0;
+}
+
+void sched_check_preempt(isr_regs_t* regs)
+{
+    if (!preempt_pending) return;
+    if ((regs->cs & 3) != 3) return;
+    proc_t* p = proc_current();
+    if (!p || p->state != PROC_RUNNING) return;
+    preempt_pending = 0;
+    p->ctx = *regs;
+    p->has_ctx = 1;
+    p->state = PROC_READY;
+    kernel_resume();
+}
+
+struct proc* sched_pick_ready(void)
+{
+    for (int i = 0; i < MAX_PROCS; i++) {
+        proc_t* pr = proc_at(i);
+        if (!pr) continue;
+        if (pr->state == PROC_READY) return pr;
     }
+    return 0;
 }

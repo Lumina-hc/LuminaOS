@@ -20,6 +20,7 @@ void gfx_cjk_load(const void* data, uint32_t size);
 int gfx_cjk_count(void);
 void gfx_begin(void);
 void gfx_flush(void);
+void gfx_flush_rect(int x, int y, int w, int h);
 void gfx_set_window(int x, int y, int w, int h);
 void gfx_clear_window(void);
 void gfx_draw_cursor_abs(int x, int y);

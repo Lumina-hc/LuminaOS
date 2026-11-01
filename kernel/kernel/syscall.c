@@ -10,6 +10,8 @@
 #include <kernel/sched.h>
 #include <kernel/timer.h>
 #include <kernel/isr.h>
+#include <kernel/proc.h>
+#include <kernel/pipe.h>
 #include <stdint.h>
 
 extern void syscall_asm(void);
@@ -18,13 +20,24 @@ extern void kernel_resume(void);
 static long sc_exit(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
+    proc_t* p = proc_current();
+    if (p) p->state = PROC_ZOMBIE;
     kernel_resume();
     return 0;
+}
+
+static int gfx_allowed(void)
+{
+    proc_t* fg = desktop_foreground();
+    proc_t* cur = proc_current();
+    if (!fg) return 1;
+    return cur == fg;
 }
 
 static long sc_putpixel(long x, long y, long color, long d)
 {
     (void)d;
+    if (!gfx_allowed()) return 0;
     gfx_begin();
     gfx_putpixel(x, y, (uint32_t)color);
     return 0;
@@ -34,6 +47,7 @@ static long sc_fill_rect(long x, long y, long w, long color)
 {
     int h = (w >> 16) & 0xFFFF;
     w &= 0xFFFF;
+    if (!gfx_allowed()) return 0;
     gfx_begin();
     gfx_fill_rect(x, y, w, h, (uint32_t)color);
     return 0;
@@ -43,6 +57,7 @@ static long sc_draw_rect(long x, long y, long w, long color)
 {
     int h = (w >> 16) & 0xFFFF;
     w &= 0xFFFF;
+    if (!gfx_allowed()) return 0;
     gfx_begin();
     gfx_draw_rect(x, y, w, h, (uint32_t)color);
     return 0;
@@ -50,6 +65,7 @@ static long sc_draw_rect(long x, long y, long w, long color)
 
 static long sc_draw_char(long x, long y, long color, long d)
 {
+    if (!gfx_allowed()) return 0;
     gfx_begin();
     gfx_draw_char(x, y, (char)d, (uint32_t)color, GFX_TRANSPARENT);
     return 0;
@@ -57,6 +73,7 @@ static long sc_draw_char(long x, long y, long color, long d)
 
 static long sc_draw_text(long x, long y, long p, long d)
 {
+    if (!gfx_allowed()) return 0;
     gfx_begin();
     gfx_draw_text(x, y, (const char*)(uintptr_t)p, (uint32_t)d, GFX_TRANSPARENT);
     return 0;
@@ -65,6 +82,7 @@ static long sc_draw_text(long x, long y, long p, long d)
 static long sc_gfx_clear(long color, long b, long c, long d)
 {
     (void)b; (void)c; (void)d;
+    if (!gfx_allowed()) return 0;
     gfx_begin();
     gfx_clear((uint32_t)color);
     return 0;
@@ -73,9 +91,8 @@ static long sc_gfx_clear(long color, long b, long c, long d)
 static long sc_gfx_flush(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
+    if (!gfx_allowed()) return 0;
     gfx_flush();
-    gfx_cursor_reset();
-    gfx_cursor_show(mouse_x(), mouse_y());
     return 0;
 }
 
@@ -94,12 +111,14 @@ static long sc_gfx_h(long a, long b, long c, long d)
 static long sc_getchar(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
+    if (proc_current() != desktop_foreground()) return -1;
     return keyboard_getchar();
 }
 
 static long sc_getchar_nb(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
+    if (proc_current() != desktop_foreground()) return -1;
     return keyboard_getchar_nonblock();
 }
 
@@ -126,17 +145,36 @@ static long sc_mouse_r(long a, long b, long c, long d)
     return mouse_right();
 }
 
+static int sc_point_in(int px, int py, int x, int y, int w, int h)
+{
+    return px >= x && px < x + w && py >= y && py < y + h;
+}
+
+static int sc_over_close(void)
+{
+    win_info_t wi;
+    desktop_win_info(&wi);
+    return sc_point_in(mouse_x(), mouse_y(), wi.close_x, wi.close_y, wi.close_w, wi.close_h);
+}
+
+static int sc_over_minimize(void)
+{
+    win_info_t wi;
+    desktop_win_info(&wi);
+    return sc_point_in(mouse_x(), mouse_y(), wi.min_x, wi.min_y, wi.min_w, wi.min_h);
+}
+
+static int sc_on_window_control(void)
+{
+    return sc_over_close() || sc_over_minimize();
+}
+
 static long sc_mouse_click(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
     if (!mouse_click_peek())
         return 0;
-    win_info_t wi;
-    desktop_win_info(&wi);
-    int mx = mouse_x();
-    int my = mouse_y();
-    if (mx >= wi.close_x && mx < wi.close_x + wi.close_w &&
-        my >= wi.close_y && my < wi.close_y + wi.close_h)
+    if (sc_on_window_control())
         return 0;
     return mouse_click_consume();
 }
@@ -212,18 +250,25 @@ static long sc_sysinfo(long a, long b, long c, long d)
 static long sc_win_should_close(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
-    if (keyboard_getchar_nonblock() == 27)
+    if (proc_current() != desktop_foreground()) return 0;
+    if (keyboard_peek() == 27) {
+        keyboard_getchar_nonblock();
         return 1;
-    if (mouse_click_peek()) {
-        win_info_t wi;
-        desktop_win_info(&wi);
-        int mx = mouse_x();
-        int my = mouse_y();
-        if (mx >= wi.close_x && mx < wi.close_x + wi.close_w &&
-            my >= wi.close_y && my < wi.close_y + wi.close_h) {
-            mouse_click_consume();
-            return 1;
-        }
+    }
+    if (mouse_click_peek() && sc_over_close()) {
+        mouse_click_consume();
+        return 1;
+    }
+    return 0;
+}
+
+static long sc_win_minimized(long a, long b, long c, long d)
+{
+    (void)a; (void)b; (void)c; (void)d;
+    if (proc_current() != desktop_foreground()) return 0;
+    if (mouse_click_peek() && sc_over_minimize()) {
+        mouse_click_consume();
+        return 1;
     }
     return 0;
 }
@@ -231,9 +276,13 @@ static long sc_win_should_close(long a, long b, long c, long d)
 static long sc_sleep(long ms, long b, long c, long d)
 {
     (void)b; (void)c; (void)d;
-    if (ms < 0) ms = 0;
-    sched_note_yield();
-    timer_wait((uint32_t)ms);
+    proc_t* p = proc_current();
+    if (p) {
+        p->sleep_until = timer_ticks() + (ms < 0 ? 0 : (uint32_t)ms);
+        p->state = PROC_SLEEPING;
+        p->has_ctx = 1;
+    }
+    kernel_resume();
     return 0;
 }
 
@@ -281,9 +330,87 @@ int syscall_pending_file(char* out, int max)
     return i;
 }
 
+static long sc_pipe(long a, long b, long c, long d)
+{
+    (void)c; (void)d;
+    int* fds = (int*)(uintptr_t)a;
+    return pipe_create(fds);
+}
+static long sc_pipe_read(long fd, long buf, long len, long d)
+{
+    (void)d;
+    return pipe_read((int)fd, (void*)(uintptr_t)buf, (int)len);
+}
+static long sc_pipe_write(long fd, long buf, long len, long d)
+{
+    (void)d;
+    return pipe_write((int)fd, (void*)(uintptr_t)buf, (int)len);
+}
+static long sc_close(long fd, long b, long c, long d)
+{
+    (void)b; (void)c; (void)d;
+    return pipe_close((int)fd);
+}
+static long sc_spawn(long path, long name, long arg, long d)
+{
+    (void)d;
+    char kpath[64];
+    char kname[32];
+    const char* up = (const char*)(uintptr_t)path;
+    const char* un = (const char*)(uintptr_t)name;
+    int i = 0;
+    if (!up) return -1;
+    while (up[i] && i < (int)sizeof(kpath) - 1) { kpath[i] = up[i]; i++; }
+    kpath[i] = '\0';
+    i = 0;
+    if (un) { while (un[i] && i < (int)sizeof(kname) - 1) { kname[i] = un[i]; i++; } }
+    kname[i] = '\0';
+    proc_t* p = proc_spawn(kpath, kname, (int)arg);
+    if (!p) return -1;
+    return p->pid;
+}
+static long sc_getarg(long a, long b, long c, long d)
+{
+    (void)a; (void)b; (void)c; (void)d;
+    proc_t* p = proc_current();
+    if (!p) return 0;
+    return p->arg;
+}
+static long sc_getpid(long a, long b, long c, long d)
+{
+    (void)a; (void)b; (void)c; (void)d;
+    proc_t* p = proc_current();
+    if (!p) return 0;
+    return p->pid;
+}
+static long sc_wait(long pid, long code, long c, long d)
+{
+    (void)c; (void)d;
+    (void)pid; (void)code;
+    /* stub */
+    return 0;
+}
+static long sc_list_procs(long a, long b, long c, long d)
+{
+    (void)b; (void)c; (void)d;
+    (void)a;
+    return proc_count();
+}
+static long sc_yield(long a, long b, long c, long d)
+{
+    (void)a; (void)b; (void)c; (void)d;
+    proc_t* p = proc_current();
+    if (p) {
+        p->state = PROC_READY;
+        p->has_ctx = 1;
+    }
+    kernel_resume();
+    return 0;
+}
 static long sc_cursor(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
+    if (!gfx_allowed()) return 0;
     gfx_cursor_show(mouse_x(), mouse_y());
     return 0;
 }
@@ -318,6 +445,17 @@ static const sc_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYSCALL_WIN_SHOULD_CLOSE] = sc_win_should_close,
     [SYSCALL_OPEN_FILE] = sc_open_file,
     [SYSCALL_GET_OPEN_FILE] = sc_get_open_file,
+    [SYSCALL_WIN_MINIMIZED] = sc_win_minimized,
+    [SYSCALL_PIPE]           = sc_pipe,
+    [SYSCALL_PIPE_READ]      = sc_pipe_read,
+    [SYSCALL_PIPE_WRITE]     = sc_pipe_write,
+    [SYSCALL_CLOSE]          = sc_close,
+    [SYSCALL_SPAWN]          = sc_spawn,
+    [SYSCALL_GETARG]         = sc_getarg,
+    [SYSCALL_GETPID]         = sc_getpid,
+    [SYSCALL_WAIT]           = sc_wait,
+    [SYSCALL_LIST_PROCS]     = sc_list_procs,
+    [SYSCALL_YIELD]          = sc_yield,
 };
 
 void syscall_init(void)
@@ -335,6 +473,51 @@ long syscall_dispatch(long num, long a1, long a2, long a3, long a4)
 
 long syscall_asm_handler(isr_regs_t* regs)
 {
+    if (regs->rax == SYSCALL_MINIMIZE) {
+        proc_t* p = proc_current();
+        if (p) {
+            p->ctx = *regs;
+            p->ctx.rax = 0;
+            p->ctx.rip = regs->rip;
+            p->minimized = 1;
+            p->has_ctx = 1;
+            p->state = PROC_SUSPENDED;
+        }
+        kernel_resume();
+        return 0;
+    }
+    if (regs->rax == SYSCALL_YIELD) {
+        proc_t* p = proc_current();
+        if (p) {
+            p->ctx = *regs;
+            p->ctx.rax = 0;
+            p->has_ctx = 1;
+            p->state = PROC_READY;
+        }
+        kernel_resume();
+        return 0;
+    }
+    if (regs->rax == SYSCALL_SLEEP) {
+        long ms = (long)regs->rdi;
+        proc_t* p = proc_current();
+        if (p) {
+            p->ctx = *regs;
+            p->ctx.rax = 0;
+            p->has_ctx = 1;
+            p->sleep_until = timer_ticks() + (ms < 0 ? 0 : (uint32_t)ms);
+            p->state = PROC_SLEEPING;
+        }
+        kernel_resume();
+        return 0;
+    }
+    if (regs->rax == SYSCALL_EXIT) {
+        proc_t* p = proc_current();
+        if (p) {
+            p->state = PROC_ZOMBIE;
+        }
+        kernel_resume();
+        return 0;
+    }
     long ret = syscall_dispatch((long)regs->rax, (long)regs->rdi, (long)regs->rsi,
                                (long)regs->rdx, (long)regs->rcx);
     regs->rax = (uint64_t)ret;

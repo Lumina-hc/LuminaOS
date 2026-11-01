@@ -168,7 +168,7 @@ cluster:         dw 0
 root_lba:        dw 0
 data_lba:        dw 0
 kernel_filename: db "KERNEL  BIN"
-msg_boot:        db 13,10,"LuminaOS v0.7.1",13,10,0
+msg_boot:        db 13,10,"LuminaOS v0.7.5",13,10,0
 msg_not_found:   db "KERNEL.BIN not found",13,10,0
 msg_error:       db "Disk error",13,10,0
 msg_jump:        db "Starting kernel...",13,10,0

@@ -56,7 +56,7 @@ static proc_t* proc_alloc(void)
         if (procs[i].state == PROC_UNUSED) {
             memzero(&procs[i], sizeof(proc_t));
             procs[i].pid = next_pid++;
-            procs[i].state = PROC_RUNNING;
+            procs[i].state = PROC_READY;
             return &procs[i];
         }
     }
@@ -67,6 +67,8 @@ proc_t* proc_create(const char* elf_path, const char* name)
 {
     proc_t* proc = proc_alloc();
     if (!proc) return 0;
+    proc->gui = 1;
+    proc->arg = 0;
 
     int n = 0;
     while (name && name[n] && n < 31) {
@@ -113,7 +115,18 @@ proc_t* proc_create(const char* elf_path, const char* name)
     proc->user_esp = USER_STACK_TOP - 0x1000;
 
     paging_switch_user_pt(saved_cr3);
+    proc->has_ctx = 0;
+    proc->minimized = 0;
 
+    return proc;
+}
+
+proc_t* proc_spawn(const char* elf_path, const char* name, int arg)
+{
+    proc_t* proc = proc_create(elf_path, name);
+    if (!proc) return 0;
+    proc->gui = 0;
+    proc->arg = arg;
     return proc;
 }
 
@@ -121,28 +134,24 @@ void proc_destroy(proc_t* proc)
 {
     if (!proc || proc->state == PROC_UNUSED) return;
 
-    uint64_t saved_cr3;
-    __asm__ volatile ("mov %%cr3, %0" : "=r"(saved_cr3));
-
-    if (proc->page_dir_phys) {
-        paging_switch_user_pt(proc->page_dir_phys);
+    if (proc->page_dir_phys)
         paging_destroy_user_dir(proc->page_dir_phys);
-    }
-
-    paging_switch_user_pt(saved_cr3);
 
     if (current_proc == proc)
         current_proc = 0;
 
     proc->state = PROC_UNUSED;
     proc->pid = 0;
+    proc->has_ctx = 0;
+    proc->minimized = 0;
+    proc->arg = 0;
 }
 
 void proc_sleep_current(uint32_t ms)
 {
     if (!current_proc) return;
     current_proc->state = PROC_SLEEPING;
-    current_proc->sleep_until = timer_ticks() + (ms * 1000 + 999) / 1000;
+    current_proc->sleep_until = timer_ticks() + (uint32_t)ms;
 }
 
 void proc_wake_check(void)
@@ -150,7 +159,22 @@ void proc_wake_check(void)
     uint32_t now = timer_ticks();
     for (int i = 0; i < MAX_PROCS; i++) {
         if (procs[i].state == PROC_SLEEPING && procs[i].sleep_until <= now) {
-            procs[i].state = PROC_RUNNING;
+            procs[i].state = PROC_READY;
         }
     }
+}
+
+proc_t* proc_at(int idx)
+{
+    if (idx < 0 || idx >= MAX_PROCS) return 0;
+    return &procs[idx];
+}
+
+int proc_count(void)
+{
+    int c = 0;
+    for (int i = 0; i < MAX_PROCS; i++) {
+        if (procs[i].state != PROC_UNUSED && procs[i].state != PROC_ZOMBIE) c++;
+    }
+    return c;
 }

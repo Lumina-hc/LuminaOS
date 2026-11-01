@@ -68,11 +68,11 @@ static void keyboard_handle(uint8_t scancode)
 
 static void keyboard_callback(void)
 {
-    if (inb(0x64) & 0x01)
-    {
-        uint8_t scancode = inb(0x60);
-        keyboard_handle(scancode);
-    }
+    uint8_t st = inb(0x64);
+    if ((st & 0x21) != 0x01)
+        return;
+    uint8_t scancode = inb(0x60);
+    keyboard_handle(scancode);
 }
 
 void keyboard_init(void)
@@ -99,4 +99,11 @@ int keyboard_getchar_nonblock(void)
     char c = kb_buffer[kb_tail];
     kb_tail = (kb_tail + 1) % KEYBOARD_BUFFER_SIZE;
     return c;
+}
+
+int keyboard_peek(void)
+{
+    if (kb_head == kb_tail)
+        return -1;
+    return (unsigned char)kb_buffer[kb_tail];
 }

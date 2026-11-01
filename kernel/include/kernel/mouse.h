@@ -4,6 +4,8 @@
 #include <stdint.h>
 
 void mouse_init(void);
+void mouse_set_bounds(int w, int h);
+void mouse_set_pos(int x, int y);
 int mouse_available(void);
 int mouse_x(void);
 int mouse_y(void);

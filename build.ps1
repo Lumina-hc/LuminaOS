@@ -44,6 +44,7 @@ $C_FILES = @(
     "kernel\kernel\desktop.c",
     "kernel\kernel\elf.c",
     "kernel\kernel\proc.c",
+    "kernel\kernel\pipe.c",
     "kernel\kernel\syscall.c",
     "kernel\arch\x86_64\gdt.c",
     "kernel\arch\x86_64\idt.c",
@@ -277,7 +278,7 @@ if (Test-Path $FONT_BIN) {
     Write-Host "  FONT16.BIN written"
 }
 
-$APPS = @("about", "files", "notepad", "system")
+$APPS = @("about", "files", "notepad", "system", "terminal", "worker")
 foreach ($app in $APPS) {
     $src = "$SDK\examples\$app.c"
     if (-not (Test-Path $src)) { continue }

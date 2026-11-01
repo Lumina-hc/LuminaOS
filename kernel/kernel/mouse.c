@@ -10,6 +10,8 @@ static volatile int mouse_pos_y;
 static volatile int mouse_btn_left;
 static volatile int mouse_btn_right;
 static volatile int mouse_click_left;
+static int mouse_max_x = 799;
+static int mouse_max_y = 599;
 
 static void mouse_wait_write(void)
 {
@@ -36,9 +38,15 @@ static void mouse_cmd(uint8_t cmd)
 
 static void mouse_callback(void)
 {
+    uint8_t st = inb(PS2_CMD);
+    if ((st & 0x21) != 0x21)
+        return;
     uint8_t data = inb(PS2_DATA);
     static uint8_t packet[3];
     static int cycle = 0;
+
+    if (cycle == 0 && !(data & 0x08))
+        return;
 
     packet[cycle] = data;
     cycle++;
@@ -53,8 +61,8 @@ static void mouse_callback(void)
         mouse_pos_y -= dy;
         if (mouse_pos_x < 0) mouse_pos_x = 0;
         if (mouse_pos_y < 0) mouse_pos_y = 0;
-        if (mouse_pos_x > 799) mouse_pos_x = 799;
-        if (mouse_pos_y > 599) mouse_pos_y = 599;
+        if (mouse_pos_x > mouse_max_x) mouse_pos_x = mouse_max_x;
+        if (mouse_pos_y > mouse_max_y) mouse_pos_y = mouse_max_y;
 
         mouse_btn_left = packet[0] & 0x01;
         mouse_btn_right = packet[0] & 0x02;
@@ -82,11 +90,27 @@ void mouse_init(void)
     mouse_cmd(0xF6);
     mouse_cmd(0xF4);
 
-    mouse_pos_x = 400;
-    mouse_pos_y = 300;
     mouse_avail = 1;
 
     irq_install_handler(12, mouse_callback);
+}
+
+void mouse_set_bounds(int w, int h)
+{
+    if (w > 1) mouse_max_x = w - 1;
+    if (h > 1) mouse_max_y = h - 1;
+    mouse_pos_x = mouse_max_x / 2;
+    mouse_pos_y = mouse_max_y / 2;
+}
+
+void mouse_set_pos(int x, int y)
+{
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x > mouse_max_x) x = mouse_max_x;
+    if (y > mouse_max_y) y = mouse_max_y;
+    mouse_pos_x = x;
+    mouse_pos_y = y;
 }
 
 int mouse_available(void)

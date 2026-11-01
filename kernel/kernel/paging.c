@@ -102,14 +102,30 @@ uint64_t paging_get_kernel_dir(void)
 
 uint64_t paging_create_user_dir(void)
 {
-    uint64_t* new_pml4 = to_ptr(pmm_alloc_zero());
-    if (!new_pml4) return 0;
+    uint64_t new_pml4_phys = pmm_alloc_zero();
+    if (!new_pml4_phys) return 0;
+    uint64_t new_pdpt_phys = pmm_alloc_zero();
+    if (!new_pdpt_phys) { pmm_free(new_pml4_phys); return 0; }
+    uint64_t new_pd0_phys = pmm_alloc_zero();
+    if (!new_pd0_phys) { pmm_free(new_pdpt_phys); pmm_free(new_pml4_phys); return 0; }
 
-    uint64_t* src = to_ptr(kernel_pml4_phys);
-    for (int i = 0; i < 512; i++)
-        new_pml4[i] = src[i];
+    uint64_t* new_pml4 = to_ptr(new_pml4_phys);
+    uint64_t* new_pdpt = to_ptr(new_pdpt_phys);
+    uint64_t* new_pd0  = to_ptr(new_pd0_phys);
 
-    return (uint64_t)new_pml4;
+    uint64_t* kpml4  = to_ptr(kernel_pml4_phys);
+    uint64_t* kpdpt  = to_ptr(kpml4[0] & PAGE_ADDR_MASK);
+    uint64_t* kpd0   = to_ptr(kpdpt[0] & PAGE_ADDR_MASK);
+
+    for (int i = 0; i < IDENTITY_ENTRIES; i++)
+        new_pd0[i] = kpd0[i];
+
+    for (int i = 1; i < 512; i++)
+        new_pdpt[i] = kpdpt[i];
+    new_pdpt[0] = new_pd0_phys | PAGE_PRESENT | PAGE_RW | PAGE_USER;
+    new_pml4[0] = new_pdpt_phys | PAGE_PRESENT | PAGE_RW | PAGE_USER;
+
+    return new_pml4_phys;
 }
 
 void paging_switch_user_pt(uint64_t pml4_phys)
@@ -121,6 +137,29 @@ void paging_switch_user_pt(uint64_t pml4_phys)
 void paging_destroy_user_dir(uint64_t pml4_phys)
 {
     if (!pml4_phys || pml4_phys == kernel_pml4_phys) return;
+
+    uint64_t* pml4 = to_ptr(pml4_phys);
+    uint64_t e0 = pml4[0];
+    if (e0 & PAGE_PRESENT) {
+        uint64_t* pdpt = to_ptr(e0 & PAGE_ADDR_MASK);
+        for (int pi = 0; pi <= 1; pi++) {
+            uint64_t pe = pdpt[pi];
+            if (!(pe & PAGE_PRESENT) || (pe & PAGE_LARGE)) continue;
+            uint64_t* pd = to_ptr(pe & PAGE_ADDR_MASK);
+            int start = (pi == 0) ? IDENTITY_ENTRIES : 0;
+            for (int di = start; di < 512; di++) {
+                uint64_t de = pd[di];
+                if (!(de & PAGE_PRESENT) || (de & PAGE_LARGE)) continue;
+                uint64_t* pt = to_ptr(de & PAGE_ADDR_MASK);
+                for (int j = 0; j < 512; j++)
+                    if (pt[j] & PAGE_PRESENT)
+                        pmm_free(pt[j] & PAGE_ADDR_MASK);
+                pmm_free((uint64_t)pt);
+            }
+            pmm_free((uint64_t)pd);
+        }
+        pmm_free((uint64_t)pdpt);
+    }
     pmm_free(pml4_phys);
 }
 
@@ -160,6 +199,45 @@ void paging_unmap_page(uint64_t vaddr)
 
     pt[(vaddr >> 12) & 511] = 0;
     invlpg(vaddr);
+}
+
+void paging_map_region(uint64_t base, uint64_t size)
+{
+    uint64_t* pml4 = to_ptr(read_cr3() & PAGE_ADDR_MASK);
+    uint64_t start = base & ~(PAGE_SIZE_2M - 1);
+    uint64_t end = (base + size + PAGE_SIZE_2M - 1) & ~(PAGE_SIZE_2M - 1);
+    if (end <= start) end = start + PAGE_SIZE_2M;
+
+    for (uint64_t va = start; va < end; va += PAGE_SIZE_2M) {
+        int pml4i = (int)((va >> 39) & 511);
+        int pdpti = (int)((va >> 30) & 511);
+        int pdi   = (int)((va >> 21) & 511);
+
+        uint64_t e = pml4[pml4i];
+        uint64_t* pdpt;
+        if (e & PAGE_PRESENT) {
+            pdpt = to_ptr(e & PAGE_ADDR_MASK);
+        } else {
+            pdpt = to_ptr(pmm_alloc_zero());
+            if (!pdpt) return;
+            pml4[pml4i] = (uint64_t)pdpt | PAGE_PRESENT | PAGE_RW;
+        }
+
+        e = pdpt[pdpti];
+        uint64_t* pd;
+        if (e & PAGE_PRESENT) {
+            pd = to_ptr(e & PAGE_ADDR_MASK);
+        } else {
+            pd = to_ptr(pmm_alloc_zero());
+            if (!pd) return;
+            pdpt[pdpti] = (uint64_t)pd | PAGE_PRESENT | PAGE_RW;
+        }
+
+        if (pd[pdi] & PAGE_PRESENT) continue;
+        pd[pdi] = (va & ~(PAGE_SIZE_2M - 1)) | PAGE_PRESENT | PAGE_RW | PAGE_LARGE;
+    }
+
+    write_cr3(read_cr3());
 }
 
 uint64_t paging_map_user_page(uint64_t vaddr, uint64_t phys, uint64_t flags)

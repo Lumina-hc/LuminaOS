@@ -1,6 +1,9 @@
 #include <kernel/gfx.h>
 #include <kernel/io.h>
 #include <kernel/pmm.h>
+#include <kernel/paging.h>
+#include <kernel/bootinfo.h>
+#include <kernel/mouse.h>
 #include <kernel/font_ascii.h>
 
 #define PCI_CONFIG_ADDR 0xCF8
@@ -14,6 +17,7 @@
 static uint32_t* lfb;
 static int gfx_w;
 static int gfx_h;
+static int gfx_stride;
 static uint8_t font[256 * FONT_BYTES_PER_CHAR];
 
 static uint32_t cjk_cp[CJK_MAX_GLYPHS];
@@ -21,7 +25,7 @@ static uint8_t cjk_glyph[CJK_MAX_GLYPHS][CJK_GLYPH_BYTES];
 static int cjk_count;
 
 #define BACK_BUFFER_ADDR 0x00600000
-#define BACK_BUFFER_SIZE 0x00200000
+#define BACK_BUFFER_SIZE 0x00A00000
 
 static uint32_t* fb;
 static uint32_t* back;
@@ -33,6 +37,10 @@ static int win_clip_y;
 static int win_clip_w;
 static int win_clip_h;
 static int win_active;
+
+static int cur_last_x = -1;
+static int cur_last_y = -1;
+static uint32_t cur_saved[16 * 16];
 
 static uint32_t pci_read_config(uint8_t bus, uint8_t dev, uint8_t func, uint8_t reg)
 {
@@ -117,13 +125,38 @@ void gfx_init(uint16_t width, uint16_t height)
 {
     font_init();
 
-    lfb = (uint32_t*)(uintptr_t)gfx_find_lfb();
-    gfx_w = width;
-    gfx_h = height;
+    uint64_t base = 0;
+    uint64_t fbsize = 0;
+    lum_boot_info_t* bi = lum_boot_info();
+
+    if (bi->Magic == LUMINA_BOOT_MAGIC && bi->FrameBufferBase) {
+        base = bi->FrameBufferBase;
+        gfx_w = (int)bi->Width;
+        gfx_h = (int)bi->Height;
+        gfx_stride = bi->Stride ? (int)bi->Stride : gfx_w;
+        fbsize = bi->FrameBufferSize ? bi->FrameBufferSize
+                                     : (uint64_t)gfx_h * gfx_stride * 4;
+        debug_puts("[gfx] uefi fb base=");
+        debug_puts("\n");
+    } else {
+        base = gfx_find_lfb();
+        gfx_w = width;
+        gfx_h = height;
+        gfx_stride = width;
+        fbsize = (uint64_t)height * width * 4;
+    }
+
+    if (base)
+        paging_map_region(base, fbsize + PAGE_SIZE_2M);
+
+    lfb = (uint32_t*)(uintptr_t)base;
+
     if (!back)
         pmm_reserve(BACK_BUFFER_ADDR, BACK_BUFFER_SIZE);
     back = (uint32_t*)BACK_BUFFER_ADDR;
     fb = lfb;
+
+    mouse_set_bounds(gfx_w, gfx_h);
 }
 
 void gfx_begin(void)
@@ -131,14 +164,45 @@ void gfx_begin(void)
     fb = back;
 }
 
+static void gfx_cursor_erase(void)
+{
+    if (cur_last_x < 0) return;
+    for (int r = 0; r < 16; r++)
+        for (int c = 0; c < 16; c++) {
+            int px = cur_last_x + c;
+            int py = cur_last_y + r;
+            if (px >= 0 && py >= 0 && px < gfx_w && py < gfx_h)
+                lfb[py * gfx_stride + px] = cur_saved[r * 16 + c];
+        }
+    cur_last_x = -1;
+    cur_last_y = -1;
+}
+
+void gfx_flush_rect(int x, int y, int w, int h)
+{
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > gfx_w) w = gfx_w - x;
+    if (y + h > gfx_h) h = gfx_h - y;
+    if (w <= 0 || h <= 0) return;
+
+    gfx_cursor_erase();
+    for (int yy = y; yy < y + h; yy++) {
+        uint32_t* src = back + yy * gfx_stride + x;
+        uint32_t* dst = lfb + yy * gfx_stride + x;
+        for (int xx = 0; xx < w; xx++)
+            dst[xx] = src[xx];
+    }
+    fb = lfb;
+    gfx_cursor_show(mouse_x(), mouse_y());
+}
+
 void gfx_flush(void)
 {
-    for (int y = 0; y < gfx_h; y++) {
-        uint32_t* src = back + y * gfx_w;
-        uint32_t* dst = lfb + y * gfx_w;
-        for (int x = 0; x < gfx_w; x++)
-            dst[x] = src[x];
-    }
+    if (win_active)
+        gfx_flush_rect(win_clip_x, win_clip_y, win_clip_w, win_clip_h);
+    else
+        gfx_flush_rect(0, 0, gfx_w, gfx_h);
     fb = lfb;
 }
 
@@ -249,7 +313,7 @@ void gfx_clear(uint32_t color)
     }
     for (int y = 0; y < gfx_h; y++)
         for (int x = 0; x < gfx_w; x++)
-            fb[y * gfx_w + x] = color;
+            fb[y * gfx_stride + x] = color;
 }
 
 void gfx_putpixel(int x, int y, uint32_t color)
@@ -261,7 +325,7 @@ void gfx_putpixel(int x, int y, uint32_t color)
         if (x >= win_clip_x + win_clip_w || y >= win_clip_y + win_clip_h) return;
     }
     if (x < 0 || y < 0 || x >= gfx_w || y >= gfx_h) return;
-    fb[y * gfx_w + x] = color;
+    fb[y * gfx_stride + x] = color;
 }
 
 void gfx_fill_rect(int x, int y, int w, int h, uint32_t color)
@@ -285,7 +349,7 @@ void gfx_fill_rect(int x, int y, int w, int h, uint32_t color)
     if (w > gfx_w - x) w = gfx_w - x;
     if (h > gfx_h - y) h = gfx_h - y;
     for (int yy = 0; yy < h; yy++) {
-        uint32_t* row = fb + (y + yy) * gfx_w + x;
+        uint32_t* row = fb + (y + yy) * gfx_stride + x;
         for (int xx = 0; xx < w; xx++)
             row[xx] = color;
     }
@@ -442,10 +506,6 @@ static const uint16_t gfx_cursor_arrow[16] = {
     0x1C07, 0x3807, 0x7007, 0xE007,
 };
 
-static int cur_last_x = -1;
-static int cur_last_y = -1;
-static uint32_t cur_saved[16 * 16];
-
 void gfx_cursor_reset(void)
 {
     cur_last_x = -1;
@@ -460,7 +520,7 @@ void gfx_draw_cursor_abs(int x, int y)
                 int px = cur_last_x + c;
                 int py = cur_last_y + r;
                 if (px >= 0 && py >= 0 && px < gfx_w && py < gfx_h)
-                    fb[py * gfx_w + px] = cur_saved[r * 16 + c];
+                    fb[py * gfx_stride + px] = cur_saved[r * 16 + c];
             }
     }
 
@@ -469,17 +529,17 @@ void gfx_draw_cursor_abs(int x, int y)
             int px = x + c;
             int py = y + r;
             if (px >= 0 && py >= 0 && px < gfx_w && py < gfx_h)
-                cur_saved[r * 16 + c] = fb[py * gfx_w + px];
+                cur_saved[r * 16 + c] = fb[py * gfx_stride + px];
         }
 
     for (int r = 0; r < 16; r++) {
         uint16_t bits = gfx_cursor_arrow[r];
         for (int c = 0; c < 16; c++) {
-            if (bits & (0x8000 >> c)) {
+            if (bits & (1 << c)) {
                 int px = x + c;
                 int py = y + r;
                 if (px >= 0 && py >= 0 && px < gfx_w && py < gfx_h)
-                    fb[py * gfx_w + px] = 0xFFFFFF;
+                    fb[py * gfx_stride + px] = 0xFFFFFF;
             }
         }
     }

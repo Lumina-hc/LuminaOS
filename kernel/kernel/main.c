@@ -14,6 +14,7 @@
 #include <kernel/gfx.h>
 #include <kernel/mouse.h>
 #include <kernel/desktop.h>
+#include <kernel/pipe.h>
 #include <kernel/proc.h>
 #include <kernel/paging.h>
 #include <kernel/gdt.h>
@@ -66,7 +67,7 @@ static void print_uint(uint32_t value)
 static void print_banner(void)
 {
     tty_puts("============================================\n");
-    tty_puts("         LuminaOS v0.7.1 - 64-bit\n");
+    tty_puts("         LuminaOS v0.7.5 - 64-bit\n");
     tty_puts("============================================\n\n");
     tty_puts("Type 'help' for commands\n\n");
 }
@@ -550,6 +551,7 @@ void kernel_main(uint8_t boot_drive)
     tss_set_stack((uint64_t)syscall_stack + SYSCALL_STACK_SIZE);
     timer_init();
     sched_init();
+    pipe_init();
     syscall_init();
 
     __asm__ volatile ("sti");
@@ -576,6 +578,7 @@ void kernel_main(uint8_t boot_drive)
 
     gfx_init(800, 600);
     mouse_init();
+    desktop_splash();
     desktop_run(fs_ready, cur_user);
     gfx_disable();
     tty_clear();
@@ -660,7 +663,7 @@ void kernel_main(uint8_t boot_drive)
         }
         else if (str_equ(cmd, "ver"))
         {
-            tty_puts("LuminaOS v0.7.1\n");
+            tty_puts("LuminaOS v0.7.5\n");
             tty_puts("Architecture: x86_64 (64-bit)\n");
             tty_puts("Kernel: Hybrid\n");
             tty_puts("Filesystem: FAT16\n");
