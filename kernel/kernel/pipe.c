@@ -38,16 +38,18 @@ int pipe_create(int rfd, int wfd, int pid)
     if (pi < 0)
         return -1;
     kpipe_t* kp = &pipes[pi];
-    kp->p.buf = kmalloc(4096);
-    if (!kp->p.buf) return -1;
+    char* buf = kmalloc(4096);
+    if (!buf) return -1;
+    proc_t* cur = proc_current();
+    kp->p.buf = buf;
     kp->p.size = 4096;
     kp->p.head = kp->p.tail = 0;
     kp->p.nwrite = 0;
     kp->p.nread = 0;
     kp->owner = pid;
     kp->open = 1;
-    proc_set_fd(proc_current(), rfd);
-    proc_set_fd(proc_current(), wfd);
+    proc_set_fd(cur, rfd);
+    proc_set_fd(cur, wfd);
     return 0;
 }
 

@@ -61,6 +61,8 @@ static void heap_add_free(heap_block_t* b, uint32_t size)
 
 void heap_init(void)
 {
+    if ((uint64_t)HEAP_START + HEAP_SIZE > PMM_MAX_PHYS)
+        return;
     heap_head = 0;
     heap_free = 0;
     heap_used = 0;

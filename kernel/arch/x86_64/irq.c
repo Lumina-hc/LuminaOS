@@ -3,6 +3,7 @@
 #include <kernel/idt.h>
 #include <kernel/isr.h>
 #include <kernel/gdt.h>
+#include <kernel/timer.h>
 
 extern void irq0(void);
 extern void irq1(void);
@@ -95,7 +96,7 @@ static void irq_remap(void)
 
 static void pit_init(void)
 {
-    const uint16_t divisor = 11932;
+    const uint16_t divisor = (uint16_t)(1193182u / TIMER_HZ);
 
     outb(0x43, 0x36);
     io_wait();

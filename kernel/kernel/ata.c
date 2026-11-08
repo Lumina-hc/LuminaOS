@@ -36,6 +36,15 @@ int ata_read_sector(uint32_t lba, void* buffer)
     outb(ATA_COMMAND, ATA_CMD_READ);
 
     if (ata_poll() != 0) return -1;
+    int timeout = 10000000;
+    while (timeout--) {
+        uint8_t st = inb(ATA_STATUS);
+        if (st & 0x80) continue;
+        if (!(st & 0x08)) continue;
+        if (st & 0x01) return -1;
+        break;
+    }
+    if (timeout <= 0) return -1;
     for (int i = 0; i < 256; i++)
         ((uint16_t*)buffer)[i] = inw(ATA_DATA);
     return 0;
@@ -51,15 +60,25 @@ int ata_write_sector(uint32_t lba, const void* buffer)
     outb(ATA_COMMAND, ATA_CMD_WRITE);
 
     if (ata_poll() != 0) return -1;
-    for (int i = 0; i < 256; i++)
-        outw(ATA_DATA, ((uint16_t*)buffer)[i]);
-
     int timeout = 10000000;
     while (timeout--) {
         uint8_t st = inb(ATA_STATUS);
         if (st & 0x80) continue;
+        if (!(st & 0x08)) continue;
         if (st & 0x01) return -1;
-        return 0;
+        break;
     }
-    return -1;
+    if (timeout <= 0) return -1;
+    for (int i = 0; i < 256; i++)
+        outw(ATA_DATA, ((uint16_t*)buffer)[i]);
+
+    timeout = 10000000;
+    while (timeout--) {
+        uint8_t st = inb(ATA_STATUS);
+        if (st & 0x80) continue;
+        if (st & 0x01) return -1;
+        break;
+    }
+    if (timeout <= 0) return -1;
+    return 0;
 }

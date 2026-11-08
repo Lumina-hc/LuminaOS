@@ -109,7 +109,7 @@ static int g_trace_i;
 static void dt_trace_note(proc_t* p, uint64_t rip, uint64_t rsp)
 {
     dt_trace_t* t = &g_trace[g_trace_i % DT_TRACE_N];
-    t->pid = p ? p->pid : 0;
+    t->pid = (p && p->state != PROC_UNUSED) ? p->pid : 0;
     t->rip = rip;
     t->rsp = rsp;
     g_trace_i++;
@@ -664,6 +664,7 @@ static void dt_close_proc(proc_t* proc)
     if (g_foreground == proc)
         g_foreground = dt_pick_focus();
     mouse_click_consume();
+    proc_set_current(0);
     proc_destroy(proc);
     proc_set_current(0);
     if (rw > 0)

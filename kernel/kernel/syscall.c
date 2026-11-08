@@ -343,7 +343,7 @@ static long sc_pipe(long a, long b, long c, long d)
     if (!p) return -1;
     int s0 = proc_fd_slot(p);
     if (s0 < 0) return -1;
-    int s1 = proc_fd_slot(p);
+    int s1 = proc_fd_slot2(p);
     if (s1 < 0) return -1;
     int* fds = (int*)(uintptr_t)a;
     int rc = pipe_create(s0, s1, p->pid);
@@ -501,7 +501,6 @@ static const sc_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYSCALL_CLOSE]          = sc_close,
     [SYSCALL_SPAWN]          = sc_spawn,
     [SYSCALL_GETARG]         = sc_getarg,
-    [SYSCALL_GETPID]         = sc_getpid,
     [SYSCALL_GETPID]         = sc_getpid,
     [SYSCALL_GETPPID]        = sc_getppid,
     [SYSCALL_WAIT]           = sc_wait,

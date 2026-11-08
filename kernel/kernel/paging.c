@@ -149,7 +149,12 @@ void paging_destroy_user_dir(uint64_t pml4_phys)
             int start = (pi == 0) ? IDENTITY_ENTRIES : 0;
             for (int di = start; di < 512; di++) {
                 uint64_t de = pd[di];
-                if (!(de & PAGE_PRESENT) || (de & PAGE_LARGE)) continue;
+                if (!(de & PAGE_PRESENT)) continue;
+                if (de & PAGE_LARGE) {
+                    for (int lj = 0; lj < 512; lj++)
+                        pmm_free((de & 0x000FFFFFFFE00000ULL) + (uint64_t)lj * PAGE_SIZE_4K);
+                    continue;
+                }
                 uint64_t* pt = to_ptr(de & PAGE_ADDR_MASK);
                 for (int j = 0; j < 512; j++)
                     if (pt[j] & PAGE_PRESENT)

@@ -130,6 +130,20 @@ int proc_fd_slot(proc_t* p)
     return -1;
 }
 
+int proc_fd_slot2(proc_t* p)
+{
+    if (!p) return -1;
+    int found = 0;
+    for (int i = 0; i < MAX_FDS; i++) {
+        if (p->fds[i] < 0) {
+            found++;
+            if (found == 2)
+                return i;
+        }
+    }
+    return -1;
+}
+
 void proc_set_fd(proc_t* p, int slot)
 {
     if (!p || slot < 0 || slot >= MAX_FDS) return;
@@ -148,9 +162,25 @@ void proc_clear_fd(proc_t* p, int slot)
     p->fds[slot] = -1;
 }
 
+void proc_wake_waiters(proc_t* child)
+{
+    if (!child) return;
+    int ppid = child->ppid;
+    for (proc_t* p = proc_head_ptr; p; p = p->next) {
+        if (p->ppid == ppid && p->state == PROC_BLOCKED) {
+            p->state = PROC_READY;
+            kernel_resume();
+        }
+    }
+}
+
 void proc_destroy(proc_t* proc)
 {
     if (!proc) return;
+    if (proc->pending_exit) {
+        proc_wake_waiters(proc);
+        proc->pending_exit = 0;
+    }
     proc_unlink(proc);
     if (current_proc == proc)
         current_proc = 0;
@@ -188,8 +218,17 @@ int proc_wait(int pid, int* code_out, int* pid_out)
             proc_destroy(p);
             return ret;
         }
-        if (pid != -1 && !matched)
-            return -1;
+        if (pid != -1 && !matched) {
+            int found = 0;
+            for (proc_t* p = proc_head_ptr; p; p = p->next) {
+                if (p->pid == pid && p->ppid == self->pid) {
+                    found = 1;
+                    break;
+                }
+            }
+            if (!found)
+                return -1;
+        }
         self->state = PROC_BLOCKED;
         kernel_resume();
     }
