@@ -1,4 +1,5 @@
 #include <kernel/keyboard.h>
+#include <kernel/mouse.h>
 #include <kernel/irq.h>
 #include <kernel/io.h>
 
@@ -37,7 +38,7 @@ static const char kbd_us_shift[128] =
     0
 };
 
-static void keyboard_handle(uint8_t scancode)
+void keyboard_feed(uint8_t scancode)
 {
     if (scancode & 0x80)
     {
@@ -66,18 +67,9 @@ static void keyboard_handle(uint8_t scancode)
     }
 }
 
-static void keyboard_callback(void)
-{
-    uint8_t st = inb(0x64);
-    if ((st & 0x21) != 0x01)
-        return;
-    uint8_t scancode = inb(0x60);
-    keyboard_handle(scancode);
-}
-
 void keyboard_init(void)
 {
-    irq_install_handler(1, keyboard_callback);
+    irq_install_handler(1, ps2_drain);
 }
 
 char keyboard_getchar(void)

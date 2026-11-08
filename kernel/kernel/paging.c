@@ -100,6 +100,41 @@ uint64_t paging_get_kernel_dir(void)
     return kernel_pml4_phys;
 }
 
+void paging_switch_kernel(void)
+{
+    if (kernel_pml4_phys)
+        write_cr3(kernel_pml4_phys);
+}
+
+static int page_ok(uint64_t* pml4, uint64_t vaddr)
+{
+    uint64_t e = pml4[(vaddr >> 39) & 511];
+    if (!(e & PAGE_PRESENT) || !(e & PAGE_USER)) return 0;
+    uint64_t* pdpt = to_ptr(e & PAGE_ADDR_MASK);
+
+    e = pdpt[(vaddr >> 30) & 511];
+    if (!(e & PAGE_PRESENT) || !(e & PAGE_USER)) return 0;
+    if (e & PAGE_LARGE) return 1;
+    uint64_t* pd = to_ptr(e & PAGE_ADDR_MASK);
+
+    e = pd[(vaddr >> 21) & 511];
+    if (!(e & PAGE_PRESENT) || !(e & PAGE_USER)) return 0;
+    if (e & PAGE_LARGE) return 1;
+    uint64_t* pt = to_ptr(e & PAGE_ADDR_MASK);
+
+    e = pt[(vaddr >> 12) & 511];
+    return (e & PAGE_PRESENT) && (e & PAGE_USER) ? 1 : 0;
+}
+
+int paging_user_dir_ok(uint64_t dir, uint64_t rip, uint64_t rsp)
+{
+    if (!dir || dir == kernel_pml4_phys) return 0;
+    uint64_t* pml4 = to_ptr(dir);
+    if (!page_ok(pml4, rip)) return 0;
+    if (!page_ok(pml4, rsp)) return 0;
+    return 1;
+}
+
 uint64_t paging_create_user_dir(void)
 {
     uint64_t new_pml4_phys = pmm_alloc_zero();
@@ -244,6 +279,29 @@ uint64_t paging_map_user_page(uint64_t vaddr, uint64_t phys, uint64_t flags)
 {
     if (vaddr < USER_BASE || vaddr >= USER_SPACE_TOP) return 0;
     return paging_map_page(vaddr, phys, flags | PAGE_USER);
+}
+
+void paging_dbg_walk(uint64_t vaddr, uint64_t* out)
+{
+    out[0] = out[1] = out[2] = out[3] = 0;
+
+    uint64_t* pml4 = to_ptr(read_cr3() & PAGE_ADDR_MASK);
+    uint64_t e = pml4[(vaddr >> 39) & 511];
+    out[0] = e;
+    if (!(e & PAGE_PRESENT)) return;
+
+    uint64_t* pdpt = to_ptr(e & PAGE_ADDR_MASK);
+    e = pdpt[(vaddr >> 30) & 511];
+    out[1] = e;
+    if (!(e & PAGE_PRESENT) || (e & PAGE_LARGE)) return;
+
+    uint64_t* pd = to_ptr(e & PAGE_ADDR_MASK);
+    e = pd[(vaddr >> 21) & 511];
+    out[2] = e;
+    if (!(e & PAGE_PRESENT) || (e & PAGE_LARGE)) return;
+
+    uint64_t* pt = to_ptr(e & PAGE_ADDR_MASK);
+    out[3] = pt[(vaddr >> 12) & 511];
 }
 
 void paging_unmap_user_page(uint64_t vaddr)

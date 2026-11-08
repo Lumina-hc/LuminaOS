@@ -547,6 +547,7 @@ void kernel_main(uint8_t boot_drive)
     pmm_init();
     heap_init();
     paging_init();
+    proc_init();
     syscall_stack = (uint32_t)(uintptr_t)kmalloc(SYSCALL_STACK_SIZE);
     tss_set_stack((uint64_t)syscall_stack + SYSCALL_STACK_SIZE);
     timer_init();

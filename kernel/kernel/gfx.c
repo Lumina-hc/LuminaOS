@@ -27,8 +27,18 @@ static int cjk_count;
 #define BACK_BUFFER_ADDR 0x00600000
 #define BACK_BUFFER_SIZE 0x00A00000
 
+#define WINDOW_SURFACE_ADDR 0x01000000
+#define WINDOW_SURFACE_SIZE 0x00800000
+
 static uint32_t* fb;
 static uint32_t* back;
+
+static uint32_t* win_surf;
+static int win_surf_w;
+static int win_surf_h;
+
+static uint32_t* surf_next;
+static uint32_t* surf_end;
 
 static int win_off_x;
 static int win_off_y;
@@ -156,12 +166,63 @@ void gfx_init(uint16_t width, uint16_t height)
     back = (uint32_t*)BACK_BUFFER_ADDR;
     fb = lfb;
 
+    if (!surf_next) {
+        pmm_reserve(WINDOW_SURFACE_ADDR, WINDOW_SURFACE_SIZE);
+        surf_next = (uint32_t*)WINDOW_SURFACE_ADDR;
+        surf_end = (uint32_t*)(WINDOW_SURFACE_ADDR + WINDOW_SURFACE_SIZE);
+    }
+
     mouse_set_bounds(gfx_w, gfx_h);
+}
+
+uint32_t* gfx_surface_alloc(int w, int h)
+{
+    if (w <= 0 || h <= 0) return 0;
+    uintptr_t bytes = (uintptr_t)w * (uintptr_t)h * 4;
+    bytes = (bytes + 15) & ~(uintptr_t)15;
+    uintptr_t used = (uintptr_t)(surf_next - (uint32_t*)WINDOW_SURFACE_ADDR);
+    if (used + bytes > WINDOW_SURFACE_SIZE) return 0;
+    uint32_t* p = surf_next;
+    surf_next = (uint32_t*)((uintptr_t)surf_next + bytes);
+    for (uintptr_t i = 0; i < bytes / 4; i++)
+        p[i] = 0;
+    return p;
+}
+
+void gfx_set_window_surface(uint32_t* buf, int w, int h)
+{
+    win_surf = buf;
+    win_surf_w = w;
+    win_surf_h = h;
+}
+
+void gfx_blit_to_back(const uint32_t* src, int sw, int sh, int dx, int dy,
+                      int cx, int cy, int cw, int ch)
+{
+    if (!src || !back) return;
+    if (cx < 0) { cw += cx; cx = 0; }
+    if (cy < 0) { ch += cy; cy = 0; }
+    if (cx + cw > gfx_w) cw = gfx_w - cx;
+    if (cy + ch > gfx_h) ch = gfx_h - cy;
+    if (cw <= 0 || ch <= 0) return;
+
+    int x0 = dx > cx ? dx : cx;
+    int y0 = dy > cy ? dy : cy;
+    int x1 = dx + sw; if (x1 > cx + cw) x1 = cx + cw;
+    int y1 = dy + sh; if (y1 > cy + ch) y1 = cy + ch;
+    if (x1 <= x0 || y1 <= y0) return;
+
+    for (int y = y0; y < y1; y++) {
+        const uint32_t* s = src + (y - dy) * sw + (x0 - dx);
+        uint32_t* d = back + y * gfx_stride + x0;
+        for (int x = 0; x < x1 - x0; x++)
+            d[x] = s[x];
+    }
 }
 
 void gfx_begin(void)
 {
-    fb = back;
+    fb = (win_active && win_surf) ? win_surf : back;
 }
 
 static void gfx_cursor_erase(void)
@@ -199,6 +260,11 @@ void gfx_flush_rect(int x, int y, int w, int h)
 
 void gfx_flush(void)
 {
+    if (win_active && win_surf) {
+        gfx_blit_to_back(win_surf, win_surf_w, win_surf_h, win_clip_x, win_clip_y, 0, 0, gfx_w, gfx_h);
+        gfx_flush_rect(win_clip_x, win_clip_y, win_clip_w, win_clip_h);
+        return;
+    }
     if (win_active)
         gfx_flush_rect(win_clip_x, win_clip_y, win_clip_w, win_clip_h);
     else
@@ -293,6 +359,9 @@ void gfx_set_window(int x, int y, int w, int h)
 void gfx_clear_window(void)
 {
     win_active = 0;
+    win_surf = 0;
+    win_surf_w = 0;
+    win_surf_h = 0;
 }
 
 int gfx_window_w(void)
@@ -308,6 +377,10 @@ int gfx_window_h(void)
 void gfx_clear(uint32_t color)
 {
     if (win_active) {
+        if (win_surf) {
+            gfx_fill_rect(0, 0, win_surf_w, win_surf_h, color);
+            return;
+        }
         gfx_fill_rect(0, 0, win_clip_w, win_clip_h, color);
         return;
     }
@@ -319,6 +392,11 @@ void gfx_clear(uint32_t color)
 void gfx_putpixel(int x, int y, uint32_t color)
 {
     if (win_active) {
+        if (win_surf) {
+            if (x < 0 || y < 0 || x >= win_surf_w || y >= win_surf_h) return;
+            fb[y * win_surf_w + x] = color;
+            return;
+        }
         x += win_off_x;
         y += win_off_y;
         if (x < win_clip_x || y < win_clip_y) return;
@@ -331,6 +409,21 @@ void gfx_putpixel(int x, int y, uint32_t color)
 void gfx_fill_rect(int x, int y, int w, int h, uint32_t color)
 {
     if (win_active) {
+        if (win_surf) {
+            int sw = win_surf_w, sh = win_surf_h;
+            if (x < 0) { w += x; x = 0; }
+            if (y < 0) { h += y; y = 0; }
+            if (x >= sw || y >= sh) return;
+            if (x + w > sw) w = sw - x;
+            if (y + h > sh) h = sh - y;
+            if (w <= 0 || h <= 0) return;
+            for (int yy = 0; yy < h; yy++) {
+                uint32_t* d = fb + (y + yy) * sw + x;
+                for (int xx = 0; xx < w; xx++)
+                    d[xx] = color;
+            }
+            return;
+        }
         x += win_off_x;
         y += win_off_y;
         int wx0 = win_clip_x;

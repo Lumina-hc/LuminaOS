@@ -92,9 +92,20 @@ static int g_hover_icon = -1;
 typedef struct {
     proc_t* proc;
     int x, y, w, h;
+    uint32_t* surf;
+    int sw, sh;
 } dt_win_t;
 
 static dt_win_t g_wins[DT_MAX_WIN];
+
+static uint32_t* g_surf[DT_MAX_WIN];
+static int g_surf_w[DT_MAX_WIN];
+static int g_surf_h[DT_MAX_WIN];
+static int g_surf_ready;
+
+static dt_win_t* g_drag;
+static int g_drag_dx;
+static int g_drag_dy;
 
 #define DT_TRACE_N 24
 typedef struct {
@@ -156,6 +167,9 @@ static void dt_repaint_rect(int x, int y, int w, int h);
 static void dt_paint_full(void);
 static void dt_refresh_frame(proc_t* p);
 static void dt_focus(proc_t* p);
+static void dt_run_app(const char* title, const char* path, const char* user);
+static void dt_resume_app(proc_t* proc);
+static void dt_close_proc(proc_t* proc);
 static void dt_draw_window_frame(const dt_win_t* w, const char* title, int focused, int with_body);
 
 proc_t* desktop_foreground(void)
@@ -165,6 +179,8 @@ proc_t* desktop_foreground(void)
 
 static void dt_add_min(proc_t* p)
 {
+    for (int i = 0; i < g_min_count; i++)
+        if (g_min[i] == p) return;
     if (g_min_count < MAX_MIN) g_min[g_min_count++] = p;
 }
 
@@ -223,6 +239,9 @@ static dt_win_t* dt_win_alloc(proc_t* p)
         if (!g_wins[i].proc) {
             g_wins[i].proc = p;
             dt_slot_rect(i, &g_wins[i].x, &g_wins[i].y, &g_wins[i].w, &g_wins[i].h);
+            g_wins[i].surf = g_surf[i];
+            g_wins[i].sw = g_surf_w[i];
+            g_wins[i].sh = g_surf_h[i];
             return &g_wins[i];
         }
     }
@@ -243,9 +262,12 @@ static void dt_win_release(proc_t* p, int* rx, int* ry, int* rw, int* rh)
 
 static dt_win_t* dt_win_at(int x, int y)
 {
-    for (int i = 0; i < DT_MAX_WIN; i++) {
+    dt_win_t* fg = g_foreground ? dt_win_of(g_foreground) : 0;
+    if (fg && !fg->proc->minimized && x >= fg->x && x < fg->x + fg->w && y >= fg->y && y < fg->y + fg->h)
+        return fg;
+    for (int i = DT_MAX_WIN - 1; i >= 0; i--) {
         dt_win_t* w = &g_wins[i];
-        if (!w->proc) continue;
+        if (!w->proc || w == fg || w->proc->minimized) continue;
         if (x >= w->x && x < w->x + w->w && y >= w->y && y < w->y + w->h) return w;
     }
     return 0;
@@ -262,7 +284,7 @@ static void dt_win_client(const dt_win_t* w, int* px, int* py, int* pw, int* ph)
 static proc_t* dt_pick_focus(void)
 {
     for (int i = DT_MAX_WIN - 1; i >= 0; i--)
-        if (g_wins[i].proc) return g_wins[i].proc;
+        if (g_wins[i].proc && !g_wins[i].proc->minimized) return g_wins[i].proc;
     return 0;
 }
 
@@ -524,12 +546,24 @@ static void dt_select_client(void)
     int cx, cy, cw, ch;
     dt_win_client(w, &cx, &cy, &cw, &ch);
     gfx_set_window(cx, cy, cw, ch);
+    gfx_set_window_surface(w->surf, w->sw, w->sh);
 }
 
 static void dt_flush_rect(int x, int y, int w, int h)
 {
     gfx_clear_window();
     gfx_flush_rect(x, y, w, h);
+}
+
+static void dt_draw_window_content(const dt_win_t* w, int rx, int ry, int rw, int rh)
+{
+    dt_draw_window_frame(w, w->proc->name, w->proc == g_foreground, 0);
+    int cx, cy, cw, ch;
+    dt_win_client(w, &cx, &cy, &cw, &ch);
+    if (w->surf)
+        gfx_blit_to_back(w->surf, w->sw, w->sh, cx, cy, rx, ry, rw, rh);
+    else
+        gfx_fill_rect(cx, cy, cw, ch, 0x101418);
 }
 
 static void dt_paint_rect(int rx, int ry, int rw, int rh)
@@ -556,12 +590,16 @@ static void dt_paint_rect(int rx, int ry, int rw, int rh)
     if (!(ry + rh <= ty || ty + TASKBAR_H <= ry))
         dt_draw_taskbar(g_user);
 
-    for (int i = 0; i < DT_MAX_WIN; i++) {
-        dt_win_t* w = &g_wins[i];
-        if (!w->proc) continue;
-        if (w->x + w->w <= rx || rx + rw <= w->x) continue;
-        if (w->y + w->h <= ry || ry + rh <= w->y) continue;
-        dt_draw_window_frame(w, w->proc->name, w->proc == g_foreground, 0);
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = 0; i < DT_MAX_WIN; i++) {
+            dt_win_t* w = &g_wins[i];
+            if (!w->proc || w->proc->minimized) continue;
+            int focused = (w->proc == g_foreground);
+            if ((pass == 0 && focused) || (pass == 1 && !focused)) continue;
+            if (w->x + w->w + 2 <= rx || rx + rw <= w->x - 2) continue;
+            if (w->y + w->h + 2 <= ry || ry + rh <= w->y - 2) continue;
+            dt_draw_window_content(w, rx, ry, rw, rh);
+        }
     }
 }
 
@@ -586,7 +624,10 @@ static void dt_show_window(dt_win_t* w, const char* title)
     gfx_begin();
     dt_draw_wallpaper_rect(w->x - 2, w->y - 2, w->w + 4, w->h + 4);
     dt_draw_window_frame(w, title, 1, 1);
-    gfx_fill_rect(cx, cy, cw, ch, 0x101418);
+    if (w->surf && w->sw == cw && w->sh == ch)
+        gfx_blit_to_back(w->surf, w->sw, w->sh, cx, cy, w->x - 2, w->y - 2, w->w + 4, w->h + 4);
+    else
+        gfx_fill_rect(cx, cy, cw, ch, 0x101418);
     dt_flush_rect(w->x - 2, w->y - 2, w->w + 4, w->h + 4);
 }
 
@@ -594,10 +635,7 @@ static void dt_refresh_frame(proc_t* p)
 {
     dt_win_t* w = dt_win_of(p);
     if (!w) return;
-    gfx_clear_window();
-    gfx_begin();
-    dt_draw_window_frame(w, p->name, p == g_foreground, 0);
-    dt_flush_rect(w->x - 1, w->y - 1, w->w + 2, w->h + 2);
+    dt_repaint_rect(w->x - 2, w->y - 2, w->w + 4, w->h + 4);
 }
 
 static void dt_focus(proc_t* p)
@@ -607,6 +645,7 @@ static void dt_focus(proc_t* p)
     g_foreground = p;
     if (old) dt_refresh_frame(old);
     if (p) dt_refresh_frame(p);
+    dt_select_client();
 }
 
 static int dt_point_in(int px, int py, int x, int y, int w, int h)
@@ -641,25 +680,75 @@ void desktop_win_info(win_info_t* info)
     info->min_h = 16;
 }
 
+static void dt_init_surfaces(void)
+{
+    if (g_surf_ready) return;
+    g_surf_ready = 1;
+    for (int i = 0; i < DT_MAX_WIN; i++) {
+        int x, y, w, h;
+        dt_slot_rect(i, &x, &y, &w, &h);
+        g_surf_w[i] = w - 2;
+        g_surf_h[i] = h - 42;
+        g_surf[i] = gfx_surface_alloc(g_surf_w[i], g_surf_h[i]);
+        if (!g_surf[i]) {
+            g_surf_w[i] = 0;
+            g_surf_h[i] = 0;
+        }
+    }
+}
+
+static proc_t* dt_find_app(const char* name)
+{
+    for (int i = 0; i < MAX_PROCS; i++) {
+        proc_t* p = proc_at(i);
+        if (!p) continue;
+        if (p->state == PROC_UNUSED || p->state == PROC_EXITED || p->state == PROC_ZOMBIE) continue;
+        int j = 0;
+        while (p->name[j] && name[j] && p->name[j] == name[j]) j++;
+        if (!p->name[j] && !name[j]) return p;
+    }
+    return 0;
+}
+
+static void dt_launch_app(const char* title, const char* path, const char* user)
+{
+    proc_t* exist = dt_find_app(title);
+    if (exist) {
+        if (exist->minimized) {
+            dt_resume_app(exist);
+        } else {
+            dt_focus(exist);
+            dt_select_client();
+        }
+        return;
+    }
+    dt_run_app(title, path, user);
+}
+
 static void dt_suspend_proc(proc_t* proc)
 {
-    int rx = 0, ry = 0, rw = 0, rh = 0;
-    dt_win_release(proc, &rx, &ry, &rw, &rh);
+    int rx = 0, ry = 0, rw = 0, rh = 0, gw = 0, gh = 0;
+    dt_win_t* win = dt_win_of(proc);
+    if (win) {
+        rx = win->x; ry = win->y; rw = win->w; rh = win->h;
+        gw = rw; gh = rh;
+    }
     dt_add_min(proc);
     proc->minimized = 1;
+    proc->state = PROC_SUSPENDED;
     proc_set_current(0);
     if (g_foreground == proc)
         g_foreground = dt_pick_focus();
-    if (rw > 0)
-        dt_repaint_rect(rx - 2, ry - 2, rw + 4, rh + 4);
-    if (g_foreground)
-        dt_refresh_frame(g_foreground);
+    if (win)
+        dt_repaint_rect(rx - 2, ry - 2, gw + 4, gh + 4);
+    dt_repaint_rect(0, scr_h() - TASKBAR_H, scr_w(), TASKBAR_H);
     dt_select_client();
 }
 
 static void dt_close_proc(proc_t* proc)
 {
     int rx = 0, ry = 0, rw = 0, rh = 0;
+    dt_remove_min(proc);
     dt_win_release(proc, &rx, &ry, &rw, &rh);
     if (g_foreground == proc)
         g_foreground = dt_pick_focus();
@@ -668,8 +757,7 @@ static void dt_close_proc(proc_t* proc)
     proc_set_current(0);
     if (rw > 0)
         dt_repaint_rect(rx - 2, ry - 2, rw + 4, rh + 4);
-    if (g_foreground)
-        dt_refresh_frame(g_foreground);
+    dt_repaint_rect(0, scr_h() - TASKBAR_H, scr_w(), TASKBAR_H);
     dt_select_client();
 }
 
@@ -688,6 +776,33 @@ static void dt_finish_proc(proc_t* proc)
     }
 }
 
+static void dt_dbg_hex(uint64_t v);
+
+static void dt_num_dec(uint64_t v)
+{
+    char b[24];
+    int i = 23;
+    b[i] = '\0';
+    if (!v) { tty_putchar('0'); return; }
+    while (v && i > 0) b[--i] = (char)('0' + (v % 10)), v /= 10;
+    tty_puts(&b[i]);
+}
+
+static void dt_drop_proc(proc_t* p, const char* why)
+{
+    tty_puts("[PROCBAD] ");
+    tty_puts(why);
+    tty_puts(" pid=");
+    dt_num_dec((uint64_t)(uint32_t)p->pid);
+    tty_puts(" pdir=");
+    dt_dbg_hex(p->page_dir_phys);
+    tty_puts(" rip=");
+    dt_dbg_hex(p->has_ctx ? p->ctx.rip : p->entry_eip);
+    tty_puts(" rsp=");
+    dt_dbg_hex(p->has_ctx ? p->ctx.rsp : p->user_esp);
+    tty_puts("\n");
+}
+
 static void dt_run_app(const char* title, const char* path, const char* user)
 {
     (void)user;
@@ -697,10 +812,22 @@ static void dt_run_app(const char* title, const char* path, const char* user)
     if (!proc) return;
 
     proc->gui = 1;
+    if (!paging_user_dir_ok(proc->page_dir_phys, proc->entry_eip, proc->user_esp)) {
+        dt_drop_proc(proc, "launch");
+        dt_close_proc(proc);
+        return;
+    }
+
     dt_win_t* win = dt_win_alloc(proc);
     if (!win) {
         proc_destroy(proc);
         return;
+    }
+
+    if (win->surf) {
+        int n = win->sw * win->sh;
+        for (int k = 0; k < n; k++)
+            win->surf[k] = 0;
     }
 
     dt_focus(proc);
@@ -723,6 +850,15 @@ static void dt_run_app(const char* title, const char* path, const char* user)
 static void dt_run_proc(proc_t* proc)
 {
     if (!proc) return;
+    if (!paging_user_dir_ok(proc->page_dir_phys,
+                            proc->has_ctx ? proc->ctx.rip : proc->entry_eip,
+                            proc->has_ctx ? proc->ctx.rsp : proc->user_esp)) {
+        dt_drop_proc(proc, "run");
+        proc->state = PROC_ZOMBIE;
+        dt_close_proc(proc);
+        return;
+    }
+
     proc->state = PROC_RUNNING;
     proc_set_current(proc);
 
@@ -751,9 +887,17 @@ static void dt_run_proc(proc_t* proc)
 static void dt_resume_app(proc_t* proc)
 {
     if (!proc) return;
-    if (!dt_win_has_free()) return;
+    dt_win_t* win = dt_win_of(proc);
+    if (!win && !dt_win_has_free()) return;
 
-    dt_win_t* win = dt_win_alloc(proc);
+    if (!paging_user_dir_ok(proc->page_dir_phys, proc->ctx.rip, proc->ctx.rsp)) {
+        dt_drop_proc(proc, "resume");
+        proc->state = PROC_ZOMBIE;
+        dt_close_proc(proc);
+        return;
+    }
+
+    if (!win) win = dt_win_alloc(proc);
     if (!win) return;
 
     proc->minimized = 0;
@@ -762,6 +906,7 @@ static void dt_resume_app(proc_t* proc)
 
     dt_focus(proc);
     dt_show_window(win, proc->name);
+    dt_repaint_rect(0, scr_h() - TASKBAR_H, scr_w(), TASKBAR_H);
     dt_select_client();
     proc_set_current(proc);
 
@@ -802,12 +947,15 @@ void desktop_splash(void)
     gfx_draw_text((W - sw) / 2, ly + lg + 54, sub, COL_TEXT_DIM, GFX_TRANSPARENT);
     fill_round_rect(bx, by, bw, bh, 4, 0x1E2533);
 
+    gfx_flush_rect(0, 0, W, H);
+
     int nd = 8;
     static const int dirx[8] = { 34, 24, 0, -24, -34, -24, 0, 24 };
     static const int diry[8] = { 0, 24, 34, 24, 0, -24, -34, -24 };
     for (int p = 0; p <= 100; p += 4) {
         int step = p / 4;
 
+        gfx_begin();
         fill_round_rect(lx, ly, lg, lg, 28, COL_ACCENT);
         fill_round_rect(lx + 14, ly + 14, lg - 28, lg - 28, 20, 0x14213D);
         for (int i = 0; i < nd; i++) {
@@ -822,18 +970,30 @@ void desktop_splash(void)
         if (fw > 0)
             fill_round_rect(bx + 2, by + 2, fw, bh - 4, 3, COL_ACCENT);
 
-        gfx_flush();
+        gfx_flush_rect(lx - 2, ly - 2, lg + 4, lg + 4);
+        gfx_flush_rect(bx - 2, by - 2, bw + 4, bh + 4);
         timer_wait(22);
     }
     timer_wait(180);
+    gfx_begin();
     gfx_clear(0x000000);
     gfx_flush();
+}
+
+static void dt_dbg_hex(uint64_t v)
+{
+    static const char hx[] = "0123456789ABCDEF";
+    tty_puts("0x");
+    for (int i = 60; i >= 0; i -= 4)
+        tty_putchar(hx[(v >> i) & 0xF]);
 }
 
 int desktop_run(int fs_ready, const char* user)
 {
     (void)fs_ready;
     g_user = user;
+
+    dt_init_surfaces();
 
     int prev_x = -1;
     int prev_y = -1;
@@ -844,12 +1004,28 @@ int desktop_run(int fs_ready, const char* user)
 
     while (1) {
         proc_wake_check();
+
+        uint64_t cr3_now;
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3_now));
+        if (cr3_now != paging_get_kernel_dir()) {
+            tty_puts("[CR3LEAK] cr3=");
+            dt_dbg_hex(cr3_now);
+            tty_puts(" kd=");
+            dt_dbg_hex(paging_get_kernel_dir());
+            tty_puts("\n");
+            paging_switch_user_pt(paging_get_kernel_dir());
+        }
+
+        for (int i = 0; i < MAX_PROCS; i++) {
+            proc_t* z = proc_at(i);
+            if (z && z->state == PROC_ZOMBIE) dt_close_proc(z);
+        }
+
         proc_t* next = sched_pick_ready();
         if (next) {
             dt_run_proc(next);
             continue;
         }
-
         if (need_full) {
             need_full = 0;
             last_sec = timer_ticks() / 1000;
@@ -896,19 +1072,52 @@ int desktop_run(int fs_ready, const char* user)
             }
         }
 
-        if (mouse_click_peek()) {
+        if (g_drag) {
+            if (!mouse_left()) {
+                g_drag = 0;
+                dt_select_client();
+            } else {
+                int nx = mx - g_drag_dx;
+                int ny = my - g_drag_dy;
+                int maxx = scr_w() - g_drag->w;
+                int maxy = scr_h() - TASKBAR_H - g_drag->h;
+                if (nx < 0) nx = 0;
+                if (ny < 0) ny = 0;
+                if (nx > maxx) nx = maxx;
+                if (ny > maxy) ny = maxy;
+                if (nx != g_drag->x || ny != g_drag->y) {
+                    int ox = g_drag->x, oy = g_drag->y;
+                    g_drag->x = nx;
+                    g_drag->y = ny;
+                    int x0 = ox < nx ? ox : nx;
+                    int y0 = oy < ny ? oy : ny;
+                    int x1 = (ox > nx ? ox : nx) + g_drag->w;
+                    int y1 = (oy > ny ? oy : ny) + g_drag->h;
+                    dt_repaint_rect(x0 - 2, y0 - 2, x1 - x0 + 4, y1 - y0 + 4);
+                }
+            }
+        }
+
+        if (mouse_click_peek() && mouse_left() && !g_drag) {
             dt_win_t* hit = dt_win_at(mx, my);
-            if (g_foreground && hit) {
-                if (hit->proc != g_foreground) {
+            if (hit) {
+                int bx = hit->x + hit->w - 72;
+                int by = hit->y + 12;
+                if (dt_point_in(mx, my, bx + 22, by - 4, 24, 24)) {
+                    mouse_click_consume();
+                    dt_close_proc(hit->proc);
+                } else if (dt_point_in(mx, my, bx - 4, by - 4, 24, 24)) {
+                    mouse_click_consume();
+                    dt_suspend_proc(hit->proc);
+                } else if (my < hit->y + 40) {
+                    mouse_click_consume();
+                    if (hit->proc != g_foreground) dt_focus(hit->proc);
+                    g_drag = hit;
+                    g_drag_dx = mx - hit->x;
+                    g_drag_dy = my - hit->y;
+                } else if (hit->proc != g_foreground) {
                     mouse_click_consume();
                     dt_focus(hit->proc);
-                    dt_select_client();
-                } else {
-                    int bx = hit->x + hit->w - 72;
-                    int by = hit->y + 12;
-                    if (!dt_point_in(mx, my, bx, by, 16, 16) &&
-                        !dt_point_in(mx, my, bx + 26, by, 16, 16))
-                        mouse_click_consume();
                 }
             } else if (mouse_click_consume()) {
                 int handled = 0;
@@ -921,10 +1130,16 @@ int desktop_run(int fs_ready, const char* user)
                         } else if (icons[i].action == APP_HALT) {
                             system_halt();
                         } else if (icons[i].action == APP_LAUNCH) {
-                            dt_run_app(icons[i].name, icons[i].elf, user);
-                            char pending[64];
-                            if (syscall_pending_file(pending, sizeof(pending)) > 0)
-                                dt_run_app("Notepad", "NOTEPAD.ELF", user);
+                            proc_t* exist = dt_find_app(icons[i].name);
+                            if (exist) {
+                                if (exist->minimized) dt_resume_app(exist);
+                                else { dt_focus(exist); dt_select_client(); }
+                            } else {
+                                dt_run_app(icons[i].name, icons[i].elf, user);
+                                char pending[64];
+                                if (syscall_pending_file(pending, sizeof(pending)) > 0)
+                                    dt_run_app("Notepad", "NOTEPAD.ELF", user);
+                            }
                         }
                         break;
                     }
@@ -935,7 +1150,7 @@ int desktop_run(int fs_ready, const char* user)
                         if (dt_point_in(mx, my, g_pills[i].x, g_pills[i].y, g_pills[i].w, g_pills[i].h)) {
                             handled = 1;
                             if (g_pills[i].action == 1)
-                                dt_run_app("Terminal", "TERMINAL.ELF", user);
+                                dt_launch_app("Terminal", "TERMINAL.ELF", user);
                             else if (g_pills[i].action == 2)
                                 dt_resume_app(g_pills[i].proc);
                             break;

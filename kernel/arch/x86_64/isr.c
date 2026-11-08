@@ -4,6 +4,7 @@
 #include <kernel/tty.h>
 #include <kernel/proc.h>
 #include <kernel/desktop.h>
+#include <kernel/paging.h>
 
 extern void isr0(void);
 extern void isr1(void);
@@ -37,6 +38,7 @@ extern void isr28(void);
 extern void isr29(void);
 extern void isr30(void);
 extern void isr31(void);
+extern void kernel_resume(void);
 
 static void reg64(const char* name, uint64_t v)
 {
@@ -51,6 +53,38 @@ static void reg64(const char* name, uint64_t v)
 
 void isr_handler(isr_regs_t* regs)
 {
+    uint64_t cr2;
+    __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
+
+    if ((regs->cs & 3) == 3) {
+        proc_t* p = proc_current();
+        uint64_t ucr3;
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(ucr3));
+        tty_puts("\n[FAULT] ");
+        reg64("vec ", regs->vector);
+        reg64("err ", regs->error);
+        reg64("rip ", regs->rip);
+        reg64("cr2 ", cr2);
+        reg64("cr3 ", ucr3);
+        reg64("pid ", p ? (uint64_t)(uint32_t)p->pid : 0);
+        reg64("pdir ", p ? p->page_dir_phys : 0);
+        reg64("rsp ", regs->rsp);
+        tty_puts("name=");
+        if (p) {
+            for (int i = 0; i < 31 && p->name[i]; i++)
+                tty_putchar(p->name[i]);
+        }
+        tty_puts("\n");
+        paging_switch_kernel();
+
+        if (p) {
+            p->state = PROC_ZOMBIE;
+            p->exit_code = -1;
+        }
+        kernel_resume();
+        return;
+    }
+
     tty_puts("\n[EXCEPTION] ");
     reg64("vec ", regs->vector);
     reg64("err ", regs->error);
@@ -59,15 +93,13 @@ void isr_handler(isr_regs_t* regs)
     reg64("rsp ", regs->rsp);
     reg64("ss  ", regs->ss);
     reg64("rflags ", regs->rflags);
-
-    uint64_t cr2;
-    __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
     reg64("cr2  ", cr2);
 
     uint64_t cr3;
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
     reg64("cr3  ", cr3);
 
+    proc_dbg_dump();
     desktop_dbg_dump();
 
     proc_t* cp = proc_current();
@@ -99,7 +131,8 @@ void isr_handler(isr_regs_t* regs)
         reg64("  pdir ", q->page_dir_phys);
     }
 
-    if ((regs->cs & 3) == 3 && regs->rsp < 0x7FF00000ULL && regs->rsp >= 0x7FF00000ULL - 0x10000ULL) {
+    if ((regs->cs & 3) == 3 && cr3 != paging_get_kernel_dir() &&
+        regs->rsp < 0x7FF00000ULL && regs->rsp >= 0x7FF00000ULL - 0x10000ULL) {
         uint64_t* sp = (uint64_t*)(uintptr_t)regs->rsp;
         reg64("  [rsp] ", *sp);
         if ((regs->rsp & 0xFFF) <= 0xFF0ULL) {

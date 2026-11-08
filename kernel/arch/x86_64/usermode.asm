@@ -7,6 +7,7 @@ global resume_user_mode
 
 extern sched_user_enter
 extern sched_user_exit
+extern paging_switch_kernel
 
 section .bss
 align 16
@@ -61,6 +62,7 @@ enter_user_mode:
 kernel_resume:
     cli
     call sched_user_exit
+    call paging_switch_kernel
 
     mov rsp, [rel saved_rsp]
     push qword [rel saved_rflags]
@@ -92,7 +94,13 @@ resume_user_mode:
     mov [rel resume_ctx], rdi
     call sched_user_enter
 
-    mov rsp, [rel resume_ctx]
+    mov rbx, [rel resume_ctx]
+
+    push qword [rbx + 168]
+    push qword [rbx + 160]
+    push qword [rbx + 152]
+    push qword [rbx + 144]
+    push qword [rbx + 136]
 
     mov ax, 0x23
     mov ds, ax
@@ -100,21 +108,20 @@ resume_user_mode:
     mov fs, ax
     mov gs, ax
 
-    mov rax, [rsp + 112]
-    mov r15, [rsp + 0]
-    mov r14, [rsp + 8]
-    mov r13, [rsp + 16]
-    mov r12, [rsp + 24]
-    mov r11, [rsp + 32]
-    mov r10, [rsp + 40]
-    mov r9,  [rsp + 48]
-    mov r8,  [rsp + 56]
-    mov rbp, [rsp + 64]
-    mov rdi, [rsp + 72]
-    mov rsi, [rsp + 80]
-    mov rdx, [rsp + 88]
-    mov rcx, [rsp + 96]
-    mov rbx, [rsp + 104]
+    mov r15, [rbx + 0]
+    mov r14, [rbx + 8]
+    mov r13, [rbx + 16]
+    mov r12, [rbx + 24]
+    mov r11, [rbx + 32]
+    mov r10, [rbx + 40]
+    mov r9,  [rbx + 48]
+    mov r8,  [rbx + 56]
+    mov rbp, [rbx + 64]
+    mov rdi, [rbx + 72]
+    mov rsi, [rbx + 80]
+    mov rdx, [rbx + 88]
+    mov rcx, [rbx + 96]
+    mov rax, [rbx + 112]
+    mov rbx, [rbx + 104]
 
-    lea rsp, [rsp + 136]
     iretq
