@@ -3,9 +3,11 @@
 
 #include <stdint.h>
 #include <kernel/isr.h>
+#include <kernel/heap.h>
 
-#define MAX_PROCS 32
 #define USER_STACK_PAGES 16
+#define PROC_NAME_MAX 32
+#define MAX_FDS 8
 
 typedef enum {
     PROC_UNUSED = 0,
@@ -33,15 +35,27 @@ typedef struct proc {
     int arg;
     int exit_code;
     int gui;
+    int ppid;
+    int pending_exit;
+    int fds[MAX_FDS];
+    struct proc* next;
 } proc_t;
 
 void proc_init(void);
+proc_t* proc_head(void);
+proc_t* proc_alloc(void);
 proc_t* proc_create(const char* elf_path, const char* name);
 proc_t* proc_spawn(const char* elf_path, const char* name, int arg);
 void proc_destroy(proc_t* proc);
+void proc_exit(proc_t* proc, int code);
+int proc_wait(int pid, int* code_out, int* pid_out);
 proc_t* proc_current(void);
 void proc_set_current(proc_t* proc);
 proc_t* proc_from_pid(int pid);
+int proc_fd_slot(proc_t* p);
+void proc_set_fd(proc_t* p, int slot);
+int proc_get_fd(proc_t* p, int slot);
+void proc_clear_fd(proc_t* p, int slot);
 void proc_sleep_current(uint32_t ms);
 void proc_wake_check(void);
 proc_t* proc_at(int idx);

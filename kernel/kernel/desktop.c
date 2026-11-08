@@ -42,6 +42,7 @@
 extern void enter_user_mode(uint64_t rip, uint64_t rsp, uint64_t cs, uint64_t ss, uint64_t rflags);
 extern void kernel_resume(void);
 extern void resume_user_mode(isr_regs_t* ctx);
+extern void sysret_asm(uint64_t rdi_ptr, uint64_t rsi_ptr, uint64_t r8_val);
 
 typedef struct {
     const char* name;

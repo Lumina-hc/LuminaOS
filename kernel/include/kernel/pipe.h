@@ -13,9 +13,9 @@ typedef struct {
 } pipe_t;
 
 void pipe_init(void);
-int pipe_create(int fds[2]);
-int pipe_read(int fd, void* dst, int len);
-int pipe_write(int fd, const void* src, int len);
-int pipe_close(int fd);
+int pipe_create(int rfd, int wfd, int pid);
+int pipe_read(int fd, int pid, void* dst, int len);
+int pipe_write(int fd, int pid, const void* src, int len);
+int pipe_close(int pi, int pid);
 
 #endif

@@ -74,10 +74,7 @@ void sched_check_preempt(isr_regs_t* regs)
 
 struct proc* sched_pick_ready(void)
 {
-    for (int i = 0; i < MAX_PROCS; i++) {
-        proc_t* pr = proc_at(i);
-        if (!pr) continue;
+    for (proc_t* pr = proc_head(); pr; pr = pr->next)
         if (pr->state == PROC_READY) return pr;
-    }
     return 0;
 }

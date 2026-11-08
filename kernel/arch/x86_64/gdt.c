@@ -103,6 +103,12 @@ void tss_set_stack(uint64_t rsp0)
     tss.ss0 = GDT_KERNEL_DS;
 }
 
+void tss_set_ist(int idx, uint64_t rsp)
+{
+    if (idx < 0 || idx > 7) return;
+    tss.ist[idx] = rsp;
+}
+
 void tss_set_kernel_stack(uint64_t rsp)
 {
     kernel_stack_top = rsp;
@@ -114,6 +120,8 @@ void gdt_init(void)
         ((uint8_t*)&tss)[i] = 0;
 
     tss.ist[0] = (uint64_t)(ist_stack + IST_STACK_SIZE);
+    tss.ist[1] = tss.rsp0;
+    tss.ist[2] = tss.rsp0;
     tss.iomap_base = sizeof(tss_t);
 
     gdt_ptr.limit = sizeof(gdt_t) - 1;

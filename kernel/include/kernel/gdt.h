@@ -11,6 +11,7 @@
 
 void gdt_init(void);
 void tss_set_stack(uint64_t rsp0);
+void tss_set_ist(int idx, uint64_t rsp);
 void tss_set_kernel_stack(uint64_t rsp);
 
 #endif
