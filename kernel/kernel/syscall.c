@@ -460,7 +460,7 @@ static const sc_fn_t syscall_table[SYSCALL_COUNT] = {
 
 void syscall_init(void)
 {
-    idt_set_gate(0x80, (uint64_t)(uintptr_t)syscall_asm, 0x08, 0xEE);
+    idt_set_gate(0x80, (uint64_t)(uintptr_t)syscall_asm, 0x08, IDT_TYPE_TRAP_GATE | 0x80);
 }
 
 long syscall_dispatch(long num, long a1, long a2, long a3, long a4)
