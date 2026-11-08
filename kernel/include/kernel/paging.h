@@ -28,6 +28,7 @@ void paging_switch_user_pt(uint64_t pml4_phys);
 void paging_destroy_user_dir(uint64_t pml4_phys);
 
 uint64_t paging_map_page(uint64_t vaddr, uint64_t phys, uint64_t flags);
+void paging_dbg_walk(uint64_t vaddr, uint64_t* out);
 void paging_unmap_page(uint64_t vaddr);
 uint64_t paging_alloc_user_pages(uint64_t vaddr, uint64_t pages);
 
@@ -37,5 +38,7 @@ uint64_t paging_map_user_page(uint64_t vaddr, uint64_t phys, uint64_t flags);
 void paging_unmap_user_page(uint64_t vaddr);
 
 uint64_t paging_get_kernel_dir(void);
+int paging_user_dir_ok(uint64_t dir, uint64_t rip, uint64_t rsp);
+void paging_switch_kernel(void);
 
 #endif

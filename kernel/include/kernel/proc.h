@@ -60,5 +60,6 @@ void proc_sleep_current(uint32_t ms);
 void proc_wake_check(void);
 proc_t* proc_at(int idx);
 int proc_count(void);
+void proc_dbg_dump(void);
 
 #endif

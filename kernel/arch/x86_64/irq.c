@@ -143,16 +143,16 @@ void irq_handler(isr_regs_t* regs)
     if (irq_no < 16 && irq_routines[irq_no])
         irq_routines[irq_no]();
 
-    if (irq_no == 0) {
-        extern void sched_check_preempt(isr_regs_t* regs);
-        sched_check_preempt(regs);
-    }
-
     if (irq_no < 16) {
         if (irq_no >= 8)
             outb(0xA0, 0x20);
         outb(0x20, 0x20);
     } else {
         apic_eoi();
+    }
+
+    if (irq_no == 0) {
+        extern void sched_check_preempt(isr_regs_t* regs);
+        sched_check_preempt(regs);
     }
 }

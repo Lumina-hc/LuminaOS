@@ -65,6 +65,7 @@
         .screenshot img {
             width: 100%; border-radius: 12px; border: 1px solid #e5e5e5;
         }
+        .screenshot.wide { grid-column: 1 / -1; }
         .screenshot p { margin-top: 0.75rem; font-size: 0.9rem; color: #666; font-weight: 500; }
         .install-steps {
             background: #fff; border: 1px solid #e5e5e5; border-radius: 8px;
@@ -112,7 +113,11 @@
             </div>
             <div class="feature">
                 <h3 data-en="Desktop Environment" data-zh="桌面环境">Desktop Environment</h3>
-                <p data-en="UEFI GOP graphics (1920x1080) with up to four windows tiled 2x2, click-to-focus, and damage-based repainting." data-zh="UEFI GOP 图形（1920x1080），最多四个窗口 2x2 平铺、点击切换焦点、按区域增量重绘。">UEFI GOP graphics (1920x1080) with up to four windows tiled 2x2, click-to-focus, and damage-based repainting.</p>
+                <p data-en="UEFI GOP graphics (1920x1080) with up to four windows tiled 2x2, per-window buffers, click-to-focus, title-bar dragging, minimize/restore, and damage-based repainting." data-zh="UEFI GOP 图形（1920x1080），最多四个窗口 2x2 平铺，每窗口独立缓冲、点击聚焦、标题栏拖动、最小化/恢复与增量重绘。">UEFI GOP graphics (1920x1080) with up to four windows tiled 2x2, per-window buffers, click-to-focus, title-bar dragging, minimize/restore, and damage-based repainting.</p>
+            </div>
+            <div class="feature">
+                <h3 data-en="Responsive Input" data-zh="流畅输入">Responsive Input</h3>
+                <p data-en="One PS/2 handler drains keyboard and mouse bytes, 200 Hz sampling with correct negative deltas, so the cursor stays smooth in every direction." data-zh="键盘与鼠标字节统一由 PS/2 处理，200Hz 采样、负向位移准确，光标各方向都顺滑。">One PS/2 handler drains keyboard and mouse bytes, 200 Hz sampling with correct negative deltas, so the cursor stays smooth in every direction.</p>
             </div>
             <div class="feature">
                 <h3 data-en="Preemptive Scheduler" data-zh="抢占式调度">Preemptive Scheduler</h3>
@@ -136,13 +141,25 @@
     <div class="section" id="screenshots">
         <h2 data-en="Screenshots" data-zh="截图">Screenshots</h2>
         <div class="screenshots">
-            <div class="screenshot">
-                <img src="cmd.png" alt="Notepad">
-                <p data-en="Notepad" data-zh="记事本">Notepad</p>
+            <div class="screenshot wide">
+                <img src="desktop.png" alt="LuminaOS desktop with Notepad, System, About and Terminal">
+                <p data-en="Desktop — four windows tiled, taskbar, drag, minimize and restore" data-zh="桌面 —— 四窗口平铺、任务栏、拖动、最小化与恢复">Desktop — four windows tiled, taskbar, drag, minimize and restore</p>
             </div>
             <div class="screenshot">
-                <img src="ui.png" alt="Desktop">
-                <p data-en="Desktop" data-zh="桌面">Desktop</p>
+                <img src="files.png" alt="Files">
+                <p data-en="Files — FAT16 browser" data-zh="文件管理 —— FAT16 浏览">Files — FAT16 browser</p>
+            </div>
+            <div class="screenshot">
+                <img src="notepad.png" alt="Notepad">
+                <p data-en="Notepad — text editing" data-zh="记事本 —— 文本编辑">Notepad — text editing</p>
+            </div>
+            <div class="screenshot">
+                <img src="shell.png" alt="Terminal">
+                <p data-en="Terminal — help output" data-zh="终端 —— help 输出">Terminal — help output</p>
+            </div>
+            <div class="screenshot">
+                <img src="system.png" alt="System">
+                <p data-en="System — memory and heap" data-zh="系统 —— 内存与堆">System — memory and heap</p>
             </div>
         </div>
     </div>

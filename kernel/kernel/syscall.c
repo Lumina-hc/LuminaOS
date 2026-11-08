@@ -12,6 +12,7 @@
 #include <kernel/isr.h>
 #include <kernel/proc.h>
 #include <kernel/pipe.h>
+#include <kernel/tty.h>
 #include <stdint.h>
 
 extern void syscall_asm(void);

@@ -8,6 +8,7 @@ global sysret_asm
 
 extern sched_user_enter
 extern sched_user_exit
+extern paging_switch_kernel
 
 section .bss
 align 16
@@ -57,6 +58,7 @@ enter_user_mode:
 kernel_resume:
     cli
     call sched_user_exit
+    call paging_switch_kernel
 
     mov rsp, [rel saved_rsp]
     mov rdi, [rel user_rsp]
@@ -90,15 +92,34 @@ resume_user_mode:
 
     call sched_user_enter
 
-    lea rsp, [rel user_rsp]
-    and rsp, 0xFFFFFFFFFFFFFFF0
-    sub rsp, 128
+    mov rbx, [rel resume_ctx]
 
-    push qword [rel user_rflags]
-    push qword 0
-    push qword 0
-    push qword 0
+    push qword [rbx + 168]
+    push qword [rbx + 160]
+    push qword [rbx + 152]
+    push qword [rbx + 144]
+    push qword [rbx + 136]
 
-    mov rax, rdi
-    mov r12, r12
-    sysret
+    mov ax, 0x23
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    mov r15, [rbx + 0]
+    mov r14, [rbx + 8]
+    mov r13, [rbx + 16]
+    mov r12, [rbx + 24]
+    mov r11, [rbx + 32]
+    mov r10, [rbx + 40]
+    mov r9,  [rbx + 48]
+    mov r8,  [rbx + 56]
+    mov rbp, [rbx + 64]
+    mov rdi, [rbx + 72]
+    mov rsi, [rbx + 80]
+    mov rdx, [rbx + 88]
+    mov rcx, [rbx + 96]
+    mov rax, [rbx + 112]
+    mov rbx, [rbx + 104]
+
+    iretq

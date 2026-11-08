@@ -23,6 +23,10 @@ void gfx_flush(void);
 void gfx_flush_rect(int x, int y, int w, int h);
 void gfx_set_window(int x, int y, int w, int h);
 void gfx_clear_window(void);
+uint32_t* gfx_surface_alloc(int w, int h);
+void gfx_set_window_surface(uint32_t* buf, int w, int h);
+void gfx_blit_to_back(const uint32_t* src, int sw, int sh, int dx, int dy,
+                      int cx, int cy, int cw, int ch);
 void gfx_draw_cursor_abs(int x, int y);
 void gfx_cursor_show(int x, int y);
 void gfx_cursor_reset(void);

@@ -1,4 +1,5 @@
 #include <kernel/mouse.h>
+#include <kernel/keyboard.h>
 #include <kernel/irq.h>
 #include <kernel/io.h>
 #define PS2_CMD  0x64
@@ -10,6 +11,7 @@ static volatile int mouse_pos_y;
 static volatile int mouse_btn_left;
 static volatile int mouse_btn_right;
 static volatile int mouse_click_left;
+static volatile int mouse_prev_left;
 static int mouse_max_x = 799;
 static int mouse_max_y = 599;
 
@@ -26,6 +28,15 @@ static void mouse_wait_read(void)
         if (inb(PS2_CMD) & 0x01) return;
     }
 }
+
+static void mouse_flush(void)
+{
+    for (int i = 0; i < 64; i++) {
+        if (!(inb(PS2_CMD) & 0x01)) return;
+        inb(PS2_DATA);
+    }
+}
+
 static void mouse_cmd(uint8_t cmd)
 {
     mouse_wait_write();
@@ -36,12 +47,8 @@ static void mouse_cmd(uint8_t cmd)
     inb(PS2_DATA);
 }
 
-static void mouse_callback(void)
+static void mouse_byte(uint8_t data)
 {
-    uint8_t st = inb(PS2_CMD);
-    if ((st & 0x21) != 0x21)
-        return;
-    uint8_t data = inb(PS2_DATA);
     static uint8_t packet[3];
     static int cycle = 0;
 
@@ -50,49 +57,84 @@ static void mouse_callback(void)
 
     packet[cycle] = data;
     cycle++;
-    if (cycle == 3) {
-        cycle = 0;
-        if (!(packet[0] & 0x08)) return;
+    if (cycle < 3)
+        return;
 
-        int dx = (int)(int8_t)packet[1];
-        int dy = (int)(int8_t)packet[2];
+    cycle = 0;
+    if (!(packet[0] & 0x08))
+        return;
 
-        mouse_pos_x += dx;
-        mouse_pos_y -= dy;
-        if (mouse_pos_x < 0) mouse_pos_x = 0;
-        if (mouse_pos_y < 0) mouse_pos_y = 0;
-        if (mouse_pos_x > mouse_max_x) mouse_pos_x = mouse_max_x;
-        if (mouse_pos_y > mouse_max_y) mouse_pos_y = mouse_max_y;
+    int dx = (int)packet[1];
+    int dy = (int)packet[2];
+    if (packet[0] & 0x10) dx -= 256;
+    if (packet[0] & 0x20) dy -= 256;
 
-        mouse_btn_left = packet[0] & 0x01;
-        mouse_btn_right = packet[0] & 0x02;
-        if (mouse_btn_left) mouse_click_left = 1;
+    if (dx > 255) dx = 255;
+    if (dx < -256) dx = -256;
+    if (dy > 255) dy = 255;
+    if (dy < -256) dy = -256;
+
+    mouse_pos_x += dx;
+    mouse_pos_y -= dy;
+    if (mouse_pos_x < 0) mouse_pos_x = 0;
+    if (mouse_pos_y < 0) mouse_pos_y = 0;
+    if (mouse_pos_x > mouse_max_x) mouse_pos_x = mouse_max_x;
+    if (mouse_pos_y > mouse_max_y) mouse_pos_y = mouse_max_y;
+
+    mouse_btn_left = packet[0] & 0x01;
+    mouse_btn_right = packet[0] & 0x02;
+    if (mouse_btn_left && !mouse_prev_left) mouse_click_left = 1;
+    mouse_prev_left = mouse_btn_left;
+}
+
+void ps2_drain(void)
+{
+    for (int guard = 0; guard < 32; guard++) {
+        uint8_t st = inb(PS2_CMD);
+        if (!(st & 0x01))
+            break;
+        uint8_t data = inb(PS2_DATA);
+        if (st & 0x20)
+            mouse_byte(data);
+        else
+            keyboard_feed(data);
     }
 }
 
 void mouse_init(void)
 {
+    mouse_flush();
+
     mouse_wait_write();
     outb(PS2_CMD, 0xA8);
-    mouse_wait_read();
-    inb(PS2_DATA);
+    mouse_flush();
 
     mouse_wait_write();
     outb(PS2_CMD, 0x20);
     mouse_wait_read();
     uint8_t status = inb(PS2_DATA);
     status |= 0x02;
+    status &= (uint8_t)~0x20;
     mouse_wait_write();
     outb(PS2_CMD, 0x60);
     mouse_wait_write();
     outb(PS2_DATA, status);
+    mouse_flush();
 
     mouse_cmd(0xF6);
+    mouse_cmd(0xF3);
+    mouse_cmd(0xC8);
+    mouse_cmd(0xE8);
+    mouse_cmd(0x03);
+    mouse_cmd(0xE6);
+    mouse_cmd(0xF3);
+    mouse_cmd(0x64);
     mouse_cmd(0xF4);
+    mouse_flush();
 
     mouse_avail = 1;
 
-    irq_install_handler(12, mouse_callback);
+    irq_install_handler(12, ps2_drain);
 }
 
 void mouse_set_bounds(int w, int h)

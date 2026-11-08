@@ -13,5 +13,6 @@ int mouse_left(void);
 int mouse_right(void);
 int mouse_click_consume(void);
 int mouse_click_peek(void);
+void ps2_drain(void);
 
 #endif

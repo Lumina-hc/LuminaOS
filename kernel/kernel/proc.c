@@ -283,3 +283,59 @@ void proc_sleep_current(uint32_t ms)
     current_proc->state = PROC_SLEEPING;
     current_proc->sleep_until = timer_ticks() + (uint32_t)ms;
 }
+
+void proc_wake_check(void)
+{
+    uint32_t now = timer_ticks();
+    for (int i = 0; i < MAX_PROCS; i++) {
+        if (procs[i].state == PROC_SLEEPING && procs[i].sleep_until <= now) {
+            procs[i].state = PROC_READY;
+        }
+    }
+}
+
+proc_t* proc_at(int idx)
+{
+    if (idx < 0 || idx >= MAX_PROCS) return 0;
+    return &procs[idx];
+}
+
+int proc_count(void)
+{
+    int c = 0;
+    for (int i = 0; i < MAX_PROCS; i++) {
+        if (procs[i].state != PROC_UNUSED && procs[i].state != PROC_ZOMBIE) c++;
+    }
+    return c;
+}
+
+static void dbg_hex64(uint64_t v)
+{
+    static const char hx[] = "0123456789ABCDEF";
+    char b[19];
+    b[0] = '0';
+    b[1] = 'x';
+    for (int i = 0; i < 16; i++)
+        b[2 + i] = hx[(v >> (60 - i * 4)) & 0xF];
+    b[18] = '\0';
+    tty_puts(b);
+}
+
+void proc_dbg_dump(void)
+{
+    tty_puts("base ");  dbg_hex64((uint64_t)(uintptr_t)procs); tty_puts("\n");
+    tty_puts("cur  ");  dbg_hex64((uint64_t)(uintptr_t)current_proc); tty_puts("\n");
+    tty_puts("next ");  dbg_hex64((uint64_t)(uint32_t)next_pid); tty_puts("\n");
+    tty_puts("kd   ");  dbg_hex64(paging_get_kernel_dir()); tty_puts("\n");
+    tty_puts("free ");  dbg_hex64((uint64_t)pmm_free_page_count()); tty_puts("\n");
+    if (!current_proc) return;
+    uint64_t* r = (uint64_t*)(uintptr_t)current_proc;
+    for (int i = 0; i < 35; i++) {
+        tty_puts("q");
+        tty_putchar((char)('0' + (i / 10)));
+        tty_putchar((char)('0' + (i % 10)));
+        tty_puts(" ");
+        dbg_hex64(r[i]);
+        tty_puts("\n");
+    }
+}
