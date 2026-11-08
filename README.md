@@ -20,7 +20,8 @@ written for the project itself.
 
 - Physical memory manager (bitmap) and 4-level paging with per-process page tables
 - GDT, IDT, exception handlers, PIC remapping, PIT and RTC drivers
-- PS/2 keyboard and mouse drivers
+- PS/2 keyboard and mouse drivers sharing one controller drain, so no scancode or
+  packet is ever stranded in the 8042 output buffer
 - ATA PIO driver with a read/write FAT16 filesystem
 - Kernel shell with file, memory, and process commands
 - Preemptive scheduler with time slicing, sleeping, yielding, and suspend/resume
@@ -32,9 +33,13 @@ written for the project itself.
 - Lumina Desktop on the UEFI GOP framebuffer (1920x1080 on the default OVMF setup)
 - Up to **4 windows tiled in a 2x2 grid**, click to focus, focused window is
   highlighted and receives all keyboard input
+- Every window owns its own surface buffer, so dragging or restoring one window
+  never corrupts another
+- Drag windows by the title bar; minimize keeps the tile, position, and contents
 - Incremental damage-based repainting: only the affected rectangle is redrawn and
   copied to the framebuffer, so an idle desktop costs no CPU
-- Single hardware cursor drawn on top of the framebuffer with no trails
+- Single hardware cursor drawn on top of the framebuffer with no trails, updated
+  from a 200 Hz PS/2 mouse stream with correct negative deltas
 - Taskbar with start pill, terminal launcher, live clock, and minimized windows
 - Window chrome with minimize (suspend/resume) and close buttons
 
@@ -103,9 +108,20 @@ Debug output goes to `build64/uefi-debug.log` (kernel `debugcon`) and
 - Click a desktop icon to launch an application; each new app takes the next free
   tile
 - Click any window to give it focus; only the focused window gets keyboard input
+- Drag a window by its title bar to move it around the desktop
 - The minimize button suspends the process and leaves a taskbar pill; click the
-  pill to resume it in a free tile
+  pill to resume it in its original tile with its contents intact
 - The close button (or `Esc`) exits the process and frees its tile
+
+## Screenshots
+
+| Desktop | Files |
+| --- | --- |
+| ![Desktop with four tiled windows](docs/desktop.png) | ![Files](docs/files.png) |
+
+| Notepad | Terminal |
+| --- | --- |
+| ![Notepad](docs/notepad.png) | ![Terminal](docs/shell.png) |
 
 ## Known issues (0.7.5)
 
