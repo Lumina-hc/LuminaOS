@@ -85,9 +85,10 @@ void isr_handler(isr_regs_t* regs)
         tty_puts("curpid =none\n");
     }
 
-    for (int i = 0; i < MAX_PROCS; i++) {
+    for (int i = 0; ; i++) {
         proc_t* q = proc_at(i);
-        if (!q || q->state == PROC_UNUSED) continue;
+        if (!q) break;
+        if (q->state == PROC_UNUSED) continue;
         tty_puts("  pid=");
         tty_puts(q->name);
         tty_puts("\n");

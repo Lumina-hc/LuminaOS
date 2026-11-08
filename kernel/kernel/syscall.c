@@ -17,11 +17,17 @@
 extern void syscall_asm(void);
 extern void kernel_resume(void);
 
+static void sc_do_exit(int code)
+{
+    proc_t* p = proc_current();
+    if (!p) return;
+    proc_exit(p, code);
+}
+
 static long sc_exit(long a, long b, long c, long d)
 {
-    (void)a; (void)b; (void)c; (void)d;
-    proc_t* p = proc_current();
-    if (p) p->state = PROC_ZOMBIE;
+    (void)b; (void)c; (void)d;
+    sc_do_exit((int)a);
     kernel_resume();
     return 0;
 }
@@ -333,23 +339,49 @@ int syscall_pending_file(char* out, int max)
 static long sc_pipe(long a, long b, long c, long d)
 {
     (void)c; (void)d;
+    proc_t* p = proc_current();
+    if (!p) return -1;
+    int s0 = proc_fd_slot(p);
+    if (s0 < 0) return -1;
+    int s1 = proc_fd_slot(p);
+    if (s1 < 0) return -1;
     int* fds = (int*)(uintptr_t)a;
-    return pipe_create(fds);
+    int rc = pipe_create(s0, s1, p->pid);
+    if (rc == 0 && fds) {
+        fds[0] = s0;
+        fds[1] = s1;
+    }
+    return rc;
 }
 static long sc_pipe_read(long fd, long buf, long len, long d)
 {
     (void)d;
-    return pipe_read((int)fd, (void*)(uintptr_t)buf, (int)len);
+    proc_t* p = proc_current();
+    if (!p) return -1;
+    int slot = proc_get_fd(p, (int)fd);
+    if (slot <= 0) return -1;
+    int rc = pipe_read(slot, p->pid, (void*)(uintptr_t)buf, (int)len);
+    return rc;
 }
 static long sc_pipe_write(long fd, long buf, long len, long d)
 {
     (void)d;
-    return pipe_write((int)fd, (void*)(uintptr_t)buf, (int)len);
+    proc_t* p = proc_current();
+    if (!p) return -1;
+    int slot = proc_get_fd(p, (int)fd);
+    if (slot <= 0) return -1;
+    int rc = pipe_write(slot, p->pid, (void*)(uintptr_t)buf, (int)len);
+    return rc;
 }
 static long sc_close(long fd, long b, long c, long d)
 {
     (void)b; (void)c; (void)d;
-    return pipe_close((int)fd);
+    proc_t* p = proc_current();
+    if (!p) return -1;
+    int slot = proc_get_fd(p, (int)fd);
+    if (slot <= 0) return -1;
+    proc_clear_fd(p, (int)fd);
+    return pipe_close(slot, p->pid);
 }
 static long sc_spawn(long path, long name, long arg, long d)
 {
@@ -365,8 +397,10 @@ static long sc_spawn(long path, long name, long arg, long d)
     i = 0;
     if (un) { while (un[i] && i < (int)sizeof(kname) - 1) { kname[i] = un[i]; i++; } }
     kname[i] = '\0';
+    proc_t* parent = proc_current();
     proc_t* p = proc_spawn(kpath, kname, (int)arg);
     if (!p) return -1;
+    if (parent) p->ppid = parent->pid;
     return p->pid;
 }
 static long sc_getarg(long a, long b, long c, long d)
@@ -383,12 +417,27 @@ static long sc_getpid(long a, long b, long c, long d)
     if (!p) return 0;
     return p->pid;
 }
+static long sc_getppid(long a, long b, long c, long d)
+{
+    (void)a; (void)b; (void)c; (void)d;
+    proc_t* p = proc_current();
+    if (!p) return 0;
+    return p->ppid;
+}
 static long sc_wait(long pid, long code, long c, long d)
 {
     (void)c; (void)d;
-    (void)pid; (void)code;
-    /* stub */
-    return 0;
+    proc_t* p = proc_current();
+    if (!p) return -1;
+    int code_out = 0;
+    int pid_out = 0;
+    int ret = proc_wait((int)pid, &code_out, &pid_out);
+    if (ret < 0) return -1;
+    if (code) {
+        long* out = (long*)(uintptr_t)code;
+        *out = code_out;
+    }
+    return pid_out;
 }
 static long sc_list_procs(long a, long b, long c, long d)
 {
@@ -453,6 +502,8 @@ static const sc_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYSCALL_SPAWN]          = sc_spawn,
     [SYSCALL_GETARG]         = sc_getarg,
     [SYSCALL_GETPID]         = sc_getpid,
+    [SYSCALL_GETPID]         = sc_getpid,
+    [SYSCALL_GETPPID]        = sc_getppid,
     [SYSCALL_WAIT]           = sc_wait,
     [SYSCALL_LIST_PROCS]     = sc_list_procs,
     [SYSCALL_YIELD]          = sc_yield,
@@ -513,7 +564,10 @@ long syscall_asm_handler(isr_regs_t* regs)
     if (regs->rax == SYSCALL_EXIT) {
         proc_t* p = proc_current();
         if (p) {
-            p->state = PROC_ZOMBIE;
+            p->ctx = *regs;
+            p->ctx.rax = 0;
+            p->has_ctx = 1;
+            sc_do_exit(0);
         }
         kernel_resume();
         return 0;

@@ -6,3 +6,4 @@ build64/
 *.img
 *.lsp
 *.log
+.asm-lsp.toml

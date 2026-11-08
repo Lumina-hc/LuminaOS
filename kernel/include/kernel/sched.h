@@ -2,7 +2,7 @@
 #define SCHED_H
 
 #include <stdint.h>
-#include <kernel/isr.h>
+#include "isr.h"
 
 #define SCHED_QUANTUM_MS 100
 
