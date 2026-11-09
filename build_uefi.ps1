@@ -311,8 +311,7 @@ function New-EspImage {
 Write-Host "=== LuminaOS UEFI Build ===" -ForegroundColor Cyan
 
 if (-not (Test-Path "$BUILD\kernel.elf")) {
-    Write-Host "  Kernel not built, running build.ps1 first..."
-    & "$ROOT\build.ps1"
+    throw "kernel.elf missing, run build.ps1 first"
 }
 
 $entry = Get-SymbolAddr "efi_entry"

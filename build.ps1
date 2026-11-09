@@ -104,7 +104,7 @@ function Write-Fat16Image {
     $bpb[0] = 0xEB; $bpb[1] = 0x3C; $bpb[2] = 0x90
     $oem = [System.Text.Encoding]::ASCII.GetBytes("LUMINAHD ")
     [array]::Copy($oem, 0, $bpb, 3, 8)
-    $bpb[11] = $bps -band 0xFF; $bpb[12] = 0
+    $bpb[11] = $bps -band 0xFF; $bpb[12] = ($bps -shr 8) -band 0xFF
     $bpb[13] = $spc
     $bpb[14] = $reserved -band 0xFF; $bpb[15] = 0
     $bpb[16] = $fatCount
@@ -290,6 +290,12 @@ foreach ($app in $APPS) {
         Write-HddFile $HDD $name ([System.IO.File]::ReadAllBytes($elf))
         Write-Host "  $name written"
     }
+}
+
+$UEFI_SCRIPT = "$ROOT\build_uefi.ps1"
+if (Test-Path $UEFI_SCRIPT) {
+    Write-Host "Refreshing UEFI boot image..."
+    & $UEFI_SCRIPT
 }
 
 Write-Host "=== Build complete ===" -ForegroundColor Green
