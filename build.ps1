@@ -263,10 +263,9 @@ $fs.Write($kernel, 0, $kernel.Length)
 $fs.Close()
 
 $HDD = "$BUILD\hdd.img"
-if (-not (Test-Path $HDD)) {
-    Write-Fat16Image $HDD 32768 128 512 0xF8
-    Write-Host "  hdd.img created (16 MiB)"
-}
+if (Test-Path $HDD) { Remove-Item $HDD -Force }
+Write-Fat16Image $HDD 32768 128 512 0xF8
+Write-Host "  hdd.img recreated clean (16 MiB)"
 
 $FONT_BIN = "$BUILD\font16.bin"
 $prev = $ErrorActionPreference
