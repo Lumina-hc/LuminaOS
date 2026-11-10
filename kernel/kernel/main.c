@@ -21,6 +21,7 @@
 #include <kernel/io.h>
 #include <kernel/timer.h>
 #include <kernel/sched.h>
+#include <users/password_services.h>
 #include <stdint.h>
 
 extern void enter_user_mode(uint64_t rip, uint64_t rsp, uint64_t cs, uint64_t ss, uint64_t rflags);
@@ -67,7 +68,7 @@ static void print_uint(uint32_t value)
 static void print_banner(void)
 {
     tty_puts("============================================\n");
-    tty_puts("         LuminaOS v0.7.5 - 64-bit\n");
+    tty_puts("         LuminaOS v0.7.6 - 64-bit\n");
     tty_puts("============================================\n\n");
     tty_puts("Type 'help' for commands\n\n");
 }
@@ -290,6 +291,44 @@ static int user_check(const char* data, const char* user, const char* pass)
     return 0;
 }
 
+static int db_register(const char* user, const char* pass)
+{
+    if (!user_name_valid(user) || !user_name_valid(pass))
+        return -2;
+
+    char buf[4096];
+    int n = read_users(buf, sizeof(buf) - 1);
+    if (n > 0 && user_exists(buf, user))
+        return -3;
+
+    int ulen = str_len(user);
+    int plen = str_len(pass);
+    if (n + ulen + 1 + plen + 1 >= (int)sizeof(buf))
+        return -4;
+
+    for (int i = 0; i < ulen; i++) buf[n++] = ascii_lower(user[i]);
+    buf[n++] = ':';
+    for (int i = 0; i < plen; i++) buf[n++] = pass[i];
+    buf[n++] = '\n';
+
+    fat16_set_write_attr(FAT16_ATTR_ARCHIVE | FAT16_ATTR_HIDDEN);
+    if (fat16_write_file_in(0, "USERS.DAT", buf, (uint32_t)n) != 0)
+        return -5;
+
+    char verify[4096];
+    if (read_users(verify, sizeof(verify) - 1) > 0 && user_exists(verify, user))
+        return 0;
+    return -5;
+}
+
+static int db_check(const char* user, const char* pass)
+{
+    char buf[4096];
+    if (read_users(buf, sizeof(buf) - 1) == 0)
+        return 0;
+    return user_check(buf, user, pass);
+}
+
 static void cmd_register(const char* arg)
 {
     if (!*arg) { tty_puts("Usage: register <username> <password>\n"); return; }
@@ -304,40 +343,17 @@ static void cmd_register(const char* arg)
     user[ulen] = '\0';
     while (*pass == ' ') pass++;
 
-    if (!user_name_valid(user) || !user_name_valid(pass)) {
+    int r = db_register(user, pass);
+    if (r == -2) {
         tty_puts("Invalid username or password\n");
-        return;
-    }
-
-    char buf[4096];
-    int n = read_users(buf, sizeof(buf) - 1);
-    if (n > 0 && user_exists(buf, user)) {
+    } else if (r == -3) {
         tty_puts("User already exists\n");
-        return;
-    }
-
-    int plen = str_len(pass);
-    if (n + ulen + 1 + plen + 1 >= (int)sizeof(buf)) {
+    } else if (r == -4) {
         tty_puts("User database full\n");
-        return;
-    }
-
-    for (int i = 0; i < ulen; i++) buf[n++] = ascii_lower(user[i]);
-    buf[n++] = ':';
-    for (int i = 0; i < plen; i++) buf[n++] = pass[i];
-    buf[n++] = '\n';
-
-    fat16_set_write_attr(FAT16_ATTR_ARCHIVE | FAT16_ATTR_HIDDEN);
-    if (fat16_write_file_in(0, "USERS.DAT", buf, (uint32_t)n) != 0) {
+    } else if (r == -5) {
         tty_puts("Register failed\n");
-        return;
-    }
-
-    char verify[4096];
-    if (read_users(verify, sizeof(verify) - 1) > 0 && user_exists(verify, user)) {
-        tty_puts("User registered. Use login to sign in\n");
     } else {
-        tty_puts("Register failed (write did not persist)\n");
+        tty_puts("User registered. Use login to sign in\n");
     }
 }
 
@@ -355,13 +371,7 @@ static void cmd_login(const char* arg)
     user[ulen] = '\0';
     while (*pass == ' ') pass++;
 
-    char buf[4096];
-    int n = read_users(buf, sizeof(buf) - 1);
-    if (n == 0) {
-        tty_puts("No users. Register first\n");
-        return;
-    }
-    if (!user_check(buf, user, pass)) {
+    if (!db_check(user, pass)) {
         tty_puts("Login failed\n");
         return;
     }
@@ -531,6 +541,78 @@ static void print_prompt(void)
 #define SYSCALL_STACK_SIZE (32 * 1024)
 static uint32_t syscall_stack;
 
+static int login_screen(void)
+{
+    password_service_init();
+
+    const char* msg = "";
+    uint32_t msg_col = 0x00FF6B6B;
+
+    while (1) {
+        int mx = mouse_x();
+        int my = mouse_y();
+
+        if (mouse_click_consume())
+            password_service_mouse(mx, my, 1);
+
+        int k;
+        while ((k = keyboard_getchar_nonblock()) >= 0) {
+            if (k == 27) {
+                cur_user[0] = '\0';
+                return 1;
+            }
+            password_service_key(k);
+        }
+
+        int act = password_service_action();
+        if (act == 1) {
+            password_service_reset_action();
+            if (db_check(name_input_value(), password_input_value())) {
+                str_copy(cur_user, name_input_value(), 16);
+                return 0;
+            }
+            msg = "Login failed";
+            msg_col = 0x00FF6B6B;
+        } else if (act == 2) {
+            password_service_reset_action();
+            int r = db_register(reg_name_input_value(), reg_password_input_value());
+            if (r == 0) {
+                str_copy(cur_user, reg_name_input_value(), 16);
+                return 0;
+            }
+            if (r == -2)
+                msg = "Use letters, digits, _";
+            else if (r == -3)
+                msg = "User already exists";
+            else if (r == -4)
+                msg = "User database full";
+            else
+                msg = "Register failed";
+            msg_col = 0x00FF6B6B;
+        }
+
+        password_service_tick(timer_ticks());
+
+        gfx_begin();
+        gfx_clear(0x000B1020);
+        password_service_draw();
+
+        if (*msg) {
+            int w = gfx_text_width(msg);
+            gfx_draw_text((gfx_width() - w) / 2, gfx_height() - 84, msg, msg_col,
+                          GFX_TRANSPARENT);
+        }
+        const char* hint = "Esc: continue as guest";
+        int hw = gfx_text_width(hint);
+        gfx_draw_text((gfx_width() - hw) / 2, gfx_height() - 56, hint, 0x006E7A8C,
+                      GFX_TRANSPARENT);
+
+        gfx_flush();
+        gfx_cursor_show(mx, my);
+        timer_wait(16);
+    }
+}
+
 void kernel_main(uint8_t boot_drive)
 {
     (void)boot_drive;
@@ -580,6 +662,8 @@ void kernel_main(uint8_t boot_drive)
     gfx_init(800, 600);
     mouse_init();
     desktop_splash();
+    if (fs_ready)
+        login_screen();
     desktop_run(fs_ready, cur_user);
     gfx_disable();
     tty_clear();
@@ -664,7 +748,7 @@ void kernel_main(uint8_t boot_drive)
         }
         else if (str_equ(cmd, "ver"))
         {
-            tty_puts("LuminaOS v0.7.5\n");
+            tty_puts("LuminaOS v0.7.6\n");
             tty_puts("Architecture: x86_64 (64-bit)\n");
             tty_puts("Kernel: Hybrid\n");
             tty_puts("Filesystem: FAT16\n");

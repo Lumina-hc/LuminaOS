@@ -1,6 +1,6 @@
 # LuminaOS
 
-**LuminaOS v0.7.5** — a small hobby operating system for **x86-64**, built entirely
+**LuminaOS v0.7.6** — a small hobby operating system for **x86-64**, built entirely
 from scratch: UEFI bootloader, kernel, filesystem, desktop environment, and
 user-space applications compiled to ELF64.
 
@@ -123,7 +123,7 @@ Debug output goes to `build64/uefi-debug.log` (kernel `debugcon`) and
 | --- | --- |
 | ![Notepad](docs/notepad.png) | ![Terminal](docs/shell.png) |
 
-## Known issues (0.7.5)
+## Known issues (0.7.6)
 
 - Long-running multi-process workloads (for example the Terminal `pipe` demo,
   which spawns `WORKER.ELF`) can still end in a kernel exception and a frozen
