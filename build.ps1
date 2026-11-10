@@ -46,6 +46,8 @@ $C_FILES = @(
     "kernel\kernel\proc.c",
     "kernel\kernel\pipe.c",
     "kernel\kernel\syscall.c",
+    "users\services\render.c",
+    "users\services\password_services.c",
     "kernel\arch\x86_64\gdt.c",
     "kernel\arch\x86_64\idt.c",
     "kernel\arch\x86_64\isr.c",
@@ -71,7 +73,7 @@ foreach ($f in $ASM_FILES) {
 }
 
 Write-Host "[3/5] Compiling kernel C..."
-    $cflags = "-ffreestanding", "-nostdlib", "-Wall", "-Wextra", "-I$ROOT\kernel\include", "-std=c99", "-m64", "-mno-red-zone", "-mgeneral-regs-only", "-mno-mmx", "-mno-80387", "-fno-pic", "-fno-pie", "-O2", "-c"
+    $cflags = "-ffreestanding", "-nostdlib", "-Wall", "-Wextra", "-I$ROOT\kernel\include", "-I$ROOT\users\include", "-std=c99", "-m64", "-mno-red-zone", "-mgeneral-regs-only", "-mno-mmx", "-mno-80387", "-fno-pic", "-fno-pie", "-O2", "-c"
 $cObjs = @()
 foreach ($f in $C_FILES) {
     $src = "$ROOT\$f"
