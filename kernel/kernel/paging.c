@@ -1,5 +1,5 @@
-#include <kernel/paging.h>
-#include <kernel/pmm.h>
+#include "kernel/paging.h"
+#include "kernel/pmm.h"
 #include <stdint.h>
 
 #define IDENTITY_ENTRIES 64

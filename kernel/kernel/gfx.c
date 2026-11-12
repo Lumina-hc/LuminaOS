@@ -1,10 +1,10 @@
-#include <kernel/gfx.h>
-#include <kernel/io.h>
-#include <kernel/pmm.h>
-#include <kernel/paging.h>
-#include <kernel/bootinfo.h>
-#include <kernel/mouse.h>
-#include <kernel/font_ascii.h>
+#include "kernel/gfx.h"
+#include "kernel/io.h"
+#include "kernel/pmm.h"
+#include "kernel/paging.h"
+#include "kernel/bootinfo.h"
+#include "kernel/mouse.h"
+#include "kernel/font_ascii.h"
 
 #define PCI_CONFIG_ADDR 0xCF8
 #define PCI_CONFIG_DATA 0xCFC

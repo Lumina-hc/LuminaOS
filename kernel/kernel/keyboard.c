@@ -1,6 +1,6 @@
-#include <kernel/keyboard.h>
-#include <kernel/irq.h>
-#include <kernel/io.h>
+#include "kernel/keyboard.h"
+#include "kernel/irq.h"
+#include "kernel/io.h"
 
 #define KEYBOARD_BUFFER_SIZE 256
 

@@ -1,109 +1,197 @@
-#include <kernel/pipe.h>
-#include <kernel/heap.h>
-#include <kernel/proc.h>
+#include "kernel/pipe.h"
+#include "kernel/heap.h"
+#include "kernel/proc.h"
+#include <stdint.h>
 
 #define MAX_PIPES 8
 #define PIPE_SIZE 4096
 
 typedef struct {
-    pipe_t p;
-    int open[2];
+    uint8_t* buf;
+    int size;
+    int head;
+    int tail;
 } kpipe_t;
 
 static kpipe_t pipes[MAX_PIPES];
 
+extern void kernel_resume(void);
+
 void pipe_init(void)
 {
     for (int i = 0; i < MAX_PIPES; i++) {
-        pipes[i].p.buf = 0;
-        pipes[i].open[0] = pipes[i].open[1] = 0;
+        pipes[i].buf = 0;
     }
 }
 
 int pipe_create(int fds[2])
 {
-    int pid = proc_current() ? proc_current()->pid : 0;
-    (void)pid;
+    proc_t* p = proc_current();
+    if (!p) return -1;
+
+    int skip = -1;
+    int fd_a = proc_fd_slot(p, &skip);
+    if (fd_a < 0) return -1;
+
     for (int i = 0; i < MAX_PIPES; i++) {
-        if (!pipes[i].p.buf) {
-            pipes[i].p.buf = kmalloc(PIPE_SIZE);
-            if (!pipes[i].p.buf) return -1;
-            pipes[i].p.size = PIPE_SIZE;
-            pipes[i].p.head = pipes[i].p.tail = 0;
-            pipes[i].open[0] = 1;
-            pipes[i].open[1] = 1;
-            fds[0] = i * 2 + 0;
-            fds[1] = i * 2 + 1;
+        if (!pipes[i].buf) {
+            uint8_t* buf = kmalloc(PIPE_SIZE);
+            if (!buf) {
+                proc_set_fd(p, fd_a, -1);
+                return -1;
+            }
+            pipes[i].buf = buf;
+            pipes[i].size = PIPE_SIZE;
+            pipes[i].head = 0;
+            pipes[i].tail = 0;
+            int fd_b = proc_fd_slot(p, &skip);
+            if (fd_b < 0) {
+                kfree(buf);
+                pipes[i].buf = 0;
+                proc_set_fd(p, fd_a, -1);
+                return -1;
+            }
+            proc_set_fd(p, fd_a, i * 2 + 0);
+            proc_set_fd(p, fd_b, i * 2 + 1);
+            fds[0] = fd_a;
+            fds[1] = fd_b;
             return 0;
         }
     }
+
+    proc_set_fd(p, fd_a, -1);
     return -1;
 }
 
-static kpipe_t* fd2pipe(int fd, int* which)
+static int pipe_of_fd(proc_t* p, int fd)
 {
-    int pi = fd / 2;
-    *which = fd % 2;
-    if (pi < 0 || pi >= MAX_PIPES) return 0;
-    if (!pipes[pi].p.buf) return 0;
-    if (pipes[pi].open[*which] == 0) return 0;
-    return &pipes[pi];
+    int owner = proc_get_fd(p, fd);
+    if (owner < 0) return -1;
+    int pi = owner / 2;
+    if (pi < 0 || pi >= MAX_PIPES) return -1;
+    if (!pipes[pi].buf) return -1;
+    return owner;
+}
+
+static int pipe_fd_held(int owner_fd)
+{
+    for (int i = 0; i < MAX_PROCS; i++) {
+        proc_t* q = proc_at(i);
+        if (!q || q->state == PROC_UNUSED) continue;
+        for (int f = 0; f < 16; f++) {
+            if (q->fds[f] == owner_fd) return 1;
+        }
+    }
+    return 0;
+}
+
+static kpipe_t* lookup_pipe(int pipe_id)
+{
+    if (pipe_id < 0 || pipe_id >= MAX_PIPES) return 0;
+    if (!pipes[pipe_id].buf) return 0;
+    return &pipes[pipe_id];
 }
 
 int pipe_read(int fd, void* dst, int len)
 {
-    int w;
-    kpipe_t* kp = fd2pipe(fd, &w);
-    if (!kp || w != 0) return -1;
-    pipe_t* p = &kp->p;
-    int got = 0;
-    while (got < len) {
-        if (p->tail == p->head) return got;
-        int chunk = p->head > p->tail ? (p->head - p->tail) : (p->size - p->tail);
-        if (chunk > len - got) chunk = len - got;
-        for (int i = 0; i < chunk; i++) ((char*)dst)[got + i] = p->buf[p->tail + i];
-        p->tail = (p->tail + chunk) % p->size;
-        got += chunk;
-        break;
+    proc_t* p = proc_current();
+    if (!p) return -1;
+
+    int owner = pipe_of_fd(p, fd);
+    if (owner < 0) return -1;
+    int pipe_id = owner / 2;
+    int which = owner % 2;
+    if (which != 0) return -1;
+
+    kpipe_t* kp = lookup_pipe(pipe_id);
+    if (!kp) return -1;
+    int write_fd = pipe_id * 2 + 1;
+
+    while (1) {
+        if (!pipe_fd_held(write_fd) && kp->tail == kp->head)
+            return 0;
+        if (kp->tail != kp->head) {
+            int chunk = kp->head > kp->tail
+                ? (kp->head - kp->tail)
+                : (kp->size - kp->tail);
+            if (chunk > len) chunk = len;
+            for (int i = 0; i < chunk; i++)
+                ((uint8_t*)dst)[i] = kp->buf[kp->tail + i];
+            kp->tail = (kp->tail + chunk) % kp->size;
+            proc_wake_pipe_owner(pipe_id, 1);
+            return chunk;
+        }
+        p->state = PROC_BLOCKED;
+        p->has_ctx = 1;
+        proc_set_current(p);
+        kernel_resume();
     }
-    if (got < 0) got = 0;
-    return got;
 }
 
 int pipe_write(int fd, const void* src, int len)
 {
-    int w;
-    kpipe_t* kp = fd2pipe(fd, &w);
-    if (!kp || w != 1) return -1;
-    pipe_t* p = &kp->p;
-    int put = 0;
-    while (put < len) {
-        int space = p->tail > p->head ? (p->tail - p->head - 1) : (p->size - p->head - 1);
+    proc_t* p = proc_current();
+    if (!p) return -1;
+
+    int owner = pipe_of_fd(p, fd);
+    if (owner < 0) return -1;
+    int pipe_id = owner / 2;
+    int which = owner % 2;
+    if (which != 1) return -1;
+
+    kpipe_t* kp = lookup_pipe(pipe_id);
+    if (!kp) return -1;
+    int read_fd = pipe_id * 2;
+
+    while (1) {
+        if (!pipe_fd_held(read_fd))
+            return -1;
+        int space = kp->tail > kp->head
+            ? (kp->tail - kp->head - 1)
+            : (kp->size - kp->head - 1);
         if (space < 0) space = 0;
-        if (p->head == p->tail) {
-            /* full? if no space, return what we put or -EAGAIN semantics; return put if partial */
-            if (space == 0 && put == 0) return 0;
-            if (space == 0) return put;
+        if (space == 0) {
+            p->state = PROC_BLOCKED;
+            p->has_ctx = 1;
+            proc_set_current(p);
+            kernel_resume();
+            continue;
         }
-        int chunk = len - put;
+        int chunk = len;
         if (chunk > space) chunk = space;
-        for (int i = 0; i < chunk; i++) p->buf[p->head + i] = ((char*)src)[put + i];
-        p->head = (p->head + chunk) % p->size;
-        put += chunk;
-        break;
+        for (int i = 0; i < chunk; i++)
+            kp->buf[kp->head + i] = ((const uint8_t*)src)[i];
+        kp->head = (kp->head + chunk) % kp->size;
+        proc_wake_pipe_owner(pipe_id, 0);
+        return chunk;
     }
-    return put;
 }
 
 int pipe_close(int fd)
 {
-    int w;
-    kpipe_t* kp = fd2pipe(fd, &w);
-    if (!kp) return 0;
-    kp->open[w] = 0;
-    if (kp->open[0] == 0 && kp->open[1] == 0) {
-        kfree(kp->p.buf);
-        kp->p.buf = 0;
+    proc_t* p = proc_current();
+    if (!p) return -1;
+
+    int owner = proc_get_fd(p, fd);
+    if (owner < 0) return -1;
+
+    proc_set_fd(p, fd, -1);
+
+    int pipe_id = owner / 2;
+    int which = owner % 2;
+    int other_fd = pipe_id * 2 + (1 - which);
+
+    kpipe_t* kp = lookup_pipe(pipe_id);
+    if (!kp) return -1;
+
+    if (pipe_fd_held(other_fd)) {
+        proc_wake_pipe_owner(pipe_id, 1 - which);
+    } else {
+        kfree(kp->buf);
+        kp->buf = 0;
+        kp->head = 0;
+        kp->tail = 0;
     }
+
     return 0;
 }

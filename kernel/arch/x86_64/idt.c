@@ -1,4 +1,4 @@
-#include <kernel/idt.h>
+#include "../../include/kernel/idt.h"
 
 typedef struct {
     uint16_t offset_low;

@@ -1,6 +1,6 @@
-#include <kernel/system.h>
-#include <kernel/io.h>
-#include <kernel/gfx.h>
+#include "kernel/system.h"
+#include "kernel/io.h"
+#include "kernel/gfx.h"
 
 static void cpu_halt(void)
 {

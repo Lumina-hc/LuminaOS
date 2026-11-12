@@ -1,5 +1,5 @@
-#include <kernel/tty.h>
-#include <kernel/io.h>
+#include "kernel/tty.h"
+#include "kernel/io.h"
 
 static uint16_t* const vga_memory = (uint16_t*)0xB8000;
 static size_t tty_row;

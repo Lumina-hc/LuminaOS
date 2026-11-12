@@ -1,16 +1,16 @@
-#include <kernel/desktop.h>
-#include <kernel/gfx.h>
-#include <kernel/mouse.h>
-#include <kernel/keyboard.h>
-#include <kernel/system.h>
-#include <kernel/proc.h>
-#include <kernel/syscall.h>
-#include <kernel/paging.h>
-#include <kernel/timer.h>
-#include <kernel/gdt.h>
-#include <kernel/io.h>
-#include <kernel/sched.h>
-#include <kernel/tty.h>
+#include "kernel/desktop.h"
+#include "kernel/gfx.h"
+#include "kernel/mouse.h"
+#include "kernel/keyboard.h"
+#include "kernel/system.h"
+#include "kernel/proc.h"
+#include "kernel/syscall.h"
+#include "kernel/paging.h"
+#include "kernel/timer.h"
+#include "kernel/gdt.h"
+#include "kernel/io.h"
+#include "kernel/sched.h"
+#include "kernel/tty.h"
 #include <stdint.h>
 
 #define FONT_W 8
@@ -336,10 +336,6 @@ static void dt_draw_wallpaper_rect(int rx, int ry, int rw, int rh)
     }
 }
 
-static void dt_draw_wallpaper(void)
-{
-    dt_draw_wallpaper_rect(0, 0, scr_w(), scr_h());
-}
 
 static void dt_draw_icon(int idx, int hover)
 {

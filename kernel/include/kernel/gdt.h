@@ -12,5 +12,7 @@
 void gdt_init(void);
 void tss_set_stack(uint64_t rsp0);
 void tss_set_kernel_stack(uint64_t rsp);
+void sysret_setup(void);
+void syscall_msr_setup(uint64_t handler);
 
 #endif

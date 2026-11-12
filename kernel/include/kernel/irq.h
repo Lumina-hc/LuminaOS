@@ -2,7 +2,7 @@
 #define IRQ_H
 
 #include <stdint.h>
-#include <kernel/isr.h>
+#include "isr.h"
 
 typedef void (*irq_handler_t)(void);
 

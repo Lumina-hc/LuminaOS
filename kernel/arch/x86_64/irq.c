@@ -1,8 +1,8 @@
-#include <kernel/irq.h>
-#include <kernel/io.h>
-#include <kernel/idt.h>
-#include <kernel/isr.h>
-#include <kernel/gdt.h>
+#include "../../include/kernel/irq.h"
+#include "../../include/kernel/io.h"
+#include "kernel/idt.h"
+#include "kernel/isr.h"
+#include "kernel/gdt.h"
 
 extern void irq0(void);
 extern void irq1(void);

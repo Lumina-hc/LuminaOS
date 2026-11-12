@@ -1,6 +1,6 @@
-#include <kernel/mouse.h>
-#include <kernel/irq.h>
-#include <kernel/io.h>
+#include "kernel/mouse.h"
+#include "kernel/irq.h"
+#include "kernel/io.h"
 #define PS2_CMD  0x64
 #define PS2_DATA 0x60
 

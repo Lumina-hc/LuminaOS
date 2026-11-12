@@ -1,27 +1,34 @@
-#include <kernel/syscall.h>
-#include <kernel/gfx.h>
-#include <kernel/keyboard.h>
-#include <kernel/mouse.h>
-#include <kernel/fat16.h>
-#include <kernel/idt.h>
-#include <kernel/pmm.h>
-#include <kernel/heap.h>
-#include <kernel/desktop.h>
-#include <kernel/sched.h>
-#include <kernel/timer.h>
-#include <kernel/isr.h>
-#include <kernel/proc.h>
-#include <kernel/pipe.h>
+#include "kernel/syscall.h"
+#include "kernel/gfx.h"
+#include "kernel/keyboard.h"
+#include "kernel/mouse.h"
+#include "kernel/fat16.h"
+#include "kernel/idt.h"
+#include "kernel/pmm.h"
+#include "kernel/heap.h"
+#include "kernel/desktop.h"
+#include "kernel/sched.h"
+#include "kernel/timer.h"
+#include "kernel/isr.h"
+#include "kernel/proc.h"
+#include "kernel/pipe.h"
 #include <stdint.h>
 
 extern void syscall_asm(void);
+extern void sysret_asm(void);
 extern void kernel_resume(void);
+
+void sysret_setup(void);
+void syscall_msr_setup(uint64_t handler);
 
 static long sc_exit(long a, long b, long c, long d)
 {
-    (void)a; (void)b; (void)c; (void)d;
+    (void)b; (void)c; (void)d;
     proc_t* p = proc_current();
-    if (p) p->state = PROC_ZOMBIE;
+    if (p) {
+        p->exit_code = (int)a;
+        p->state = PROC_ZOMBIE;
+    }
     kernel_resume();
     return 0;
 }
@@ -332,7 +339,7 @@ int syscall_pending_file(char* out, int max)
 
 static long sc_pipe(long a, long b, long c, long d)
 {
-    (void)c; (void)d;
+    (void)b; (void)c; (void)d;
     int* fds = (int*)(uintptr_t)a;
     return pipe_create(fds);
 }
@@ -383,12 +390,37 @@ static long sc_getpid(long a, long b, long c, long d)
     if (!p) return 0;
     return p->pid;
 }
+static long sc_fork(long a, long b, long c, long d)
+{
+    (void)a; (void)b; (void)c; (void)d;
+    proc_t* p = proc_current();
+    if (!p) return -1;
+    proc_t* child = proc_fork(p);
+    if (!child) return -1;
+    child->ctx = p->ctx;
+    child->ctx.rax = 0;
+    child->ctx.rsp = p->user_esp;
+    child->state = PROC_READY;
+    p->ctx.rax = child->pid;
+    return child->pid;
+}
+
 static long sc_wait(long pid, long code, long c, long d)
 {
     (void)c; (void)d;
-    (void)pid; (void)code;
-    /* stub */
-    return 0;
+    int code_val = 0;
+    int wpid = proc_wait((int)pid, &code_val);
+    if (wpid < 0) return -1;
+    if (code) *(int*)(uintptr_t)code = code_val;
+    return wpid;
+}
+
+static long sc_ppid(long a, long b, long c, long d)
+{
+    (void)a; (void)b; (void)c; (void)d;
+    proc_t* p = proc_current();
+    if (!p) return 0;
+    return p->ppid;
 }
 static long sc_list_procs(long a, long b, long c, long d)
 {
@@ -453,7 +485,9 @@ static const sc_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYSCALL_SPAWN]          = sc_spawn,
     [SYSCALL_GETARG]         = sc_getarg,
     [SYSCALL_GETPID]         = sc_getpid,
+    [SYSCALL_FORK]          = sc_fork,
     [SYSCALL_WAIT]           = sc_wait,
+    [SYSCALL_PPID]          = sc_ppid,
     [SYSCALL_LIST_PROCS]     = sc_list_procs,
     [SYSCALL_YIELD]          = sc_yield,
 };
@@ -461,6 +495,8 @@ static const sc_fn_t syscall_table[SYSCALL_COUNT] = {
 void syscall_init(void)
 {
     idt_set_gate(0x80, (uint64_t)(uintptr_t)syscall_asm, 0x08, 0xEE);
+    sysret_setup();
+    syscall_msr_setup((uint64_t)(uintptr_t)sysret_asm);
 }
 
 long syscall_dispatch(long num, long a1, long a2, long a3, long a4)
@@ -513,6 +549,7 @@ long syscall_asm_handler(isr_regs_t* regs)
     if (regs->rax == SYSCALL_EXIT) {
         proc_t* p = proc_current();
         if (p) {
+            p->exit_code = 0;
             p->state = PROC_ZOMBIE;
         }
         kernel_resume();

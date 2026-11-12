@@ -1,7 +1,7 @@
-#include <kernel/elf.h>
-#include <kernel/paging.h>
-#include <kernel/fat16.h>
-#include <kernel/pmm.h>
+#include "kernel/elf.h"
+#include "kernel/paging.h"
+#include "kernel/fat16.h"
+#include "kernel/pmm.h"
 #include <stdint.h>
 
 #define PAGE_SIZE 4096

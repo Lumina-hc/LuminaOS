@@ -1,9 +1,9 @@
-#include <kernel/idt.h>
-#include <kernel/isr.h>
-#include <kernel/io.h>
-#include <kernel/tty.h>
-#include <kernel/proc.h>
-#include <kernel/desktop.h>
+#include "kernel/idt.h"
+#include "kernel/isr.h"
+#include "kernel/io.h"
+#include "kernel/tty.h"
+#include "kernel/proc.h"
+#include "kernel/desktop.h"
 
 extern void isr0(void);
 extern void isr1(void);

@@ -2,11 +2,11 @@ param()
 
 $ErrorActionPreference = "Stop"
 $ROOT = $PSScriptRoot
-$BUILD = "$ROOT\build64"
+$BUILD = "$ROOT/build64"
 $SDK = Join-Path (Split-Path $ROOT -Parent) "LuminaOS-SDK"
-$TOOLCHAIN = "D:\programs\x86_64-elf-tools-windows\bin"
+$TOOLCHAIN = "D:/programs/x86_64-elf-tools-windows/bin"
 
-$env:PATH = "$TOOLCHAIN;D:\programs\nasm;$env:PATH"
+$env:PATH = "$TOOLCHAIN;D:/programs/nasm;$env:PATH"
 
 function Invoke-Tool {
     param([string]$Exe, [string[]]$ToolArgs)
@@ -29,28 +29,28 @@ $ASM_FILES = @(
 )
 
 $C_FILES = @(
-    "kernel\kernel\tty.c",
-    "kernel\kernel\pmm.c",
-    "kernel\kernel\heap.c",
-    "kernel\kernel\paging.c",
-    "kernel\kernel\system.c",
-    "kernel\kernel\timer.c",
-    "kernel\kernel\sched.c",
-    "kernel\kernel\keyboard.c",
-    "kernel\kernel\mouse.c",
-    "kernel\kernel\ata.c",
-    "kernel\kernel\fat16.c",
-    "kernel\kernel\gfx.c",
-    "kernel\kernel\desktop.c",
-    "kernel\kernel\elf.c",
-    "kernel\kernel\proc.c",
-    "kernel\kernel\pipe.c",
-    "kernel\kernel\syscall.c",
-    "kernel\arch\x86_64\gdt.c",
-    "kernel\arch\x86_64\idt.c",
-    "kernel\arch\x86_64\isr.c",
-    "kernel\arch\x86_64\irq.c",
-    "kernel\kernel\main.c"
+    "kernel/kernel/tty.c",
+    "kernel/kernel/pmm.c",
+    "kernel/kernel/heap.c",
+    "kernel/kernel/paging.c",
+    "kernel/kernel/system.c",
+    "kernel/kernel/timer.c",
+    "kernel/kernel/sched.c",
+    "kernel/kernel/keyboard.c",
+    "kernel/kernel/mouse.c",
+    "kernel/kernel/ata.c",
+    "kernel/kernel/fat16.c",
+    "kernel/kernel/gfx.c",
+    "kernel/kernel/desktop.c",
+    "kernel/kernel/elf.c",
+    "kernel/kernel/proc.c",
+    "kernel/kernel/pipe.c",
+    "kernel/kernel/syscall.c",
+    "kernel/arch/x86_64/gdt.c",
+    "kernel/arch/x86_64/idt.c",
+    "kernel/arch/x86_64/isr.c",
+    "kernel/arch/x86_64/irq.c",
+    "kernel/kernel/main.c"
 )
 
 Write-Host "=== LuminaOS x86_64 Build ===" -ForegroundColor Cyan
@@ -58,25 +58,25 @@ Write-Host "=== LuminaOS x86_64 Build ===" -ForegroundColor Cyan
 New-Item -ItemType Directory -Path $BUILD -Force | Out-Null
 
 Write-Host "[1/5] Assembling boot sector..."
-Invoke-Tool "nasm" @("$ROOT\boot\boot.asm", "-f", "bin", "-o", "$BUILD\boot.bin", "-w+all", "-Wno-reloc-abs-word")
+Invoke-Tool "nasm" @("$ROOT/boot/boot.asm", "-f", "bin", "-o", "$BUILD/boot.bin", "-w+all", "-Wno-reloc-abs-word")
 
 Write-Host "[2/5] Assembling kernel entry..."
 $asmObjs = @()
 foreach ($f in $ASM_FILES) {
-    $src = "$ROOT\kernel\arch\x86_64\$f"
+    $src = "$ROOT/kernel/arch/x86_64/$f"
     if (-not (Test-Path $src)) { throw "missing asm: $src" }
-    $obj = "$BUILD\asm_" + ($f -replace '\.asm$', '.o')
+    $obj = "$BUILD/asm_" + ($f -replace '\.asm$', '.o')
     Invoke-Tool "nasm" @($src, "-f", "elf64", "-o", $obj)
     $asmObjs += $obj
 }
 
 Write-Host "[3/5] Compiling kernel C..."
-    $cflags = "-ffreestanding", "-nostdlib", "-Wall", "-Wextra", "-I$ROOT\kernel\include", "-std=c99", "-m64", "-mno-red-zone", "-mgeneral-regs-only", "-mno-mmx", "-mno-80387", "-fno-pic", "-fno-pie", "-O2", "-c"
+    $cflags = "-ffreestanding", "-nostdlib", "-Wall", "-Wextra", "-I$ROOT/kernel/include", "-std=c99", "-m64", "-mno-red-zone", "-mgeneral-regs-only", "-mno-mmx", "-mno-80387", "-fno-pic", "-fno-pie", "-O2", "-c"
 $cObjs = @()
 foreach ($f in $C_FILES) {
-    $src = "$ROOT\$f"
+    $src = "$ROOT/$f"
     if (-not (Test-Path $src)) { throw "missing c: $src" }
-    $obj = "$BUILD\" + ([System.IO.Path]::GetFileNameWithoutExtension($f)) + ".o"
+    $obj = "$BUILD/" + ([System.IO.Path]::GetFileNameWithoutExtension($f)) + ".o"
     $gccArgs = $cflags + @($src, "-o", $obj)
     Invoke-Tool "x86_64-elf-gcc" $gccArgs
     $cObjs += $obj
@@ -86,11 +86,11 @@ Write-Host "[4/5] Linking kernel..."
 $objs = @()
 foreach ($o in $asmObjs) { $objs += $o }
 foreach ($o in $cObjs) { $objs += $o }
-$ldArgs = @("-T", "$ROOT\kernel\linker.ld", "-o", "$BUILD\kernel.elf") + $objs
+$ldArgs = @("-T", "$ROOT/kernel/linker.ld", "-o", "$BUILD/kernel.elf") + $objs
 Invoke-Tool "x86_64-elf-ld" $ldArgs
-Invoke-Tool "x86_64-elf-objcopy" @("-O", "binary", "$BUILD\kernel.elf", "$BUILD\KERNEL.BIN")
-$kernSz = (Get-Item "$BUILD\KERNEL.BIN").Length
-Invoke-Tool "x86_64-elf-size" @("$BUILD\kernel.elf")
+Invoke-Tool "x86_64-elf-objcopy" @("-O", "binary", "$BUILD/kernel.elf", "$BUILD/KERNEL.BIN")
+$kernSz = (Get-Item "$BUILD/KERNEL.BIN").Length
+Invoke-Tool "x86_64-elf-size" @("$BUILD/kernel.elf")
 
 function Write-Fat16Image {
     param([string]$Image, [int]$TotalSectors, [int]$SectorsPerFat, [int]$RootEntries, [byte]$Media)
@@ -219,13 +219,14 @@ function Write-HddFile {
 }
 
 Write-Host "[5/5] Creating boot floppy and data disk..."
-$boot = [System.IO.File]::ReadAllBytes("$BUILD\boot.bin")
-$kernel = [System.IO.File]::ReadAllBytes("$BUILD\KERNEL.BIN")
+$boot = [System.IO.File]::ReadAllBytes("$BUILD/boot.bin")
+$kernel = [System.IO.File]::ReadAllBytes("$BUILD/KERNEL.BIN")
 $kc = [math]::Ceiling($kernel.Length / 512)
 
-if (Test-Path "$BUILD\floppy.img") { Remove-Item "$BUILD\floppy.img" -Force }
-fsutil file createnew "$BUILD\floppy.img" 1474560 > $null
-$fs = [System.IO.File]::Open("$BUILD\floppy.img", [System.IO.FileMode]::Open, [System.IO.FileAccess]::Write)
+if (Test-Path "$BUILD/floppy.img") { Remove-Item "$BUILD/floppy.img" -Force }
+if (-not (Test-Path "/usr/bin/dd")) { throw "dd not found. Please install coreutils." }
+$null = Start-Process -FilePath "/usr/bin/dd" -ArgumentList "bs=512 count=2880 if=/dev/zero of=\"$BUILD/floppy.img\"" -Wait -NoNewWindow -RedirectStandardOutput "$NULL" -RedirectStandardError "$NULL"
+$fs = [System.IO.File]::Open("$BUILD/floppy.img", [System.IO.FileMode]::Open, [System.IO.FileAccess]::Write)
 $fs.Write($boot, 0, $boot.Length)
 
 $RESERVED_SECTORS = 1
@@ -268,25 +269,26 @@ if (-not (Test-Path $HDD)) {
     Write-Host "  hdd.img created (16 MiB)"
 }
 
-$FONT_BIN = "$BUILD\font16.bin"
+$FONT_BIN = "$BUILD/font16.bin"
 $prev = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-& "$ROOT\tools\gen_font.ps1" "$FONT_BIN"
+& "$ROOT/tools/gen_font.ps1" "$FONT_BIN"
 $ErrorActionPreference = $prev
-if (Test-Path $FONT_BIN) {
+if (Test-Path $FONT_BIN -and ((Get-Item $FONT_BIN).Length -gt 0)) {
     Write-HddFile $HDD "FONT16.BIN" ([System.IO.File]::ReadAllBytes($FONT_BIN))
     Write-Host "  FONT16.BIN written"
 }
 
 $APPS = @("about", "files", "notepad", "system", "terminal", "worker")
 foreach ($app in $APPS) {
-    $src = "$SDK\examples\$app.c"
+    $src = "$SDK/examples/$app.c"
     if (-not (Test-Path $src)) { continue }
     $ErrorActionPreference = "Continue"
-    & "$SDK\build_app.ps1" -Source $src -OutputDir "$SDK\out"
+    $appBuildResult = & "$SDK/build_app.ps1" -Source $src -OutputDir "$SDK/out"
     $ErrorActionPreference = $prev
-    $elf = "$SDK\out\$app.elf"
-    if (Test-Path $elf) {
+    if ($LASTEXITCODE -ne 0) { continue }
+    $elf = "$SDK/out/$app.elf"
+    if (Test-Path $elf -and ((Get-Item $elf).Length -gt 0)) {
         $name = $app.ToUpper() + ".ELF"
         Write-HddFile $HDD $name ([System.IO.File]::ReadAllBytes($elf))
         Write-Host "  $name written"
@@ -296,5 +298,5 @@ foreach ($app in $APPS) {
 Write-Host "=== Build complete ===" -ForegroundColor Green
 Write-Host "  Bootloader:  $($boot.Length) B"
 Write-Host "  Kernel:      $kernSz B ($kc clusters)"
-Write-Host "  Floppy:      $BUILD\floppy.img"
+Write-Host "  Floppy:      $BUILD/floppy.img"
 Write-Host "  Data disk:   $HDD"

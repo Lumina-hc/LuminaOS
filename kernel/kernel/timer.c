@@ -1,7 +1,7 @@
-#include <kernel/timer.h>
-#include <kernel/irq.h>
-#include <kernel/io.h>
-#include <kernel/sched.h>
+#include "kernel/timer.h"
+#include "kernel/irq.h"
+#include "kernel/io.h"
+#include "kernel/sched.h"
 
 #define PIT_CHANNEL0 0x40
 #define PIT_COMMAND  0x43

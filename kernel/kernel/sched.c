@@ -1,7 +1,7 @@
-#include <kernel/sched.h>
-#include <kernel/timer.h>
-#include <kernel/proc.h>
-#include <kernel/isr.h>
+#include "kernel/sched.h"
+#include "kernel/timer.h"
+#include "kernel/proc.h"
+#include "kernel/isr.h"
 
 extern void kernel_resume(void);
 

@@ -1,5 +1,4 @@
-#include <kernel/gdt.h>
-
+#include "../../include/kernel/gdt.h"
 typedef struct {
     uint16_t limit_low;
     uint16_t base_low;
@@ -131,4 +130,15 @@ void gdt_init(void)
     gdt_write_msr(0xC0000101, 0);
     gdt_write_msr(0xC0000100, 0);
     gdt_write_msr(0xC0000102, 0);
+}
+
+void sysret_setup(void)
+{
+    gdt_write_msr(0xC0000082, GDT_USER_CS | 3);
+    gdt_write_msr(0xC0000089, kernel_stack_top ? kernel_stack_top : 0);
+}
+
+void syscall_msr_setup(uint64_t handler)
+{
+    gdt_write_msr(0xC0000081, handler);
 }
