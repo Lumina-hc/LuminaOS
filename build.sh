@@ -35,6 +35,7 @@ C_FILES=(
     kernel/kernel/proc.c
     kernel/kernel/pipe.c
     kernel/kernel/syscall.c
+    kernel/kernel/wayland.c
     users/services/render.c
     users/services/password_services.c
     kernel/arch/x86_64/gdt.c
@@ -427,8 +428,19 @@ fi
 # 编译并写入示例应用
 # ---------------------------------------------------------------------------
 APPS=(about files notepad system terminal worker)
+APP_SRC=()
+APP_OUT=()
 for app in "${APPS[@]}"; do
-    src="$SDK/examples/$app.c"
+    APP_SRC+=("$SDK/examples/$app.c")
+    APP_OUT+=("$(echo "$app" | tr '[:lower:]' '[:upper:]').ELF")
+done
+APP_SRC+=("$ROOT/users/apps/wayland_demo.c")
+APP_OUT+=("WAYLAND.ELF")
+
+for i in "${!APP_SRC[@]}"; do
+    src="${APP_SRC[$i]}"
+    name="${APP_OUT[$i]}"
+    app="$(basename "$src" .c)"
     [[ -f "$src" ]] || continue
     if command -v powershell.exe >/dev/null 2>&1; then
         powershell.exe -NoProfile -ExecutionPolicy Bypass \
@@ -436,7 +448,6 @@ for app in "${APPS[@]}"; do
     fi
     elf="$SDK/out/$app.elf"
     [[ -f "$elf" ]] || continue
-    name="$(echo "$app" | tr '[:lower:]' '[:upper:]').ELF"
     python3 - "$BUILD/hdd.img" "$name" "$elf" <<'PYEOF'
 import sys, struct, math
 class Fat16:

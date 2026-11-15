@@ -8,6 +8,9 @@
 static volatile char kb_buffer[KEYBOARD_BUFFER_SIZE];
 static volatile int kb_head = 0;
 static volatile int kb_tail = 0;
+static volatile uint8_t kb_raw[KEYBOARD_BUFFER_SIZE];
+static volatile int kb_raw_head = 0;
+static volatile int kb_raw_tail = 0;
 static volatile int kb_shift = 0;
 
 static const char kbd_us[128] =
@@ -40,6 +43,13 @@ static const char kbd_us_shift[128] =
 
 void keyboard_feed(uint8_t scancode)
 {
+    int raw_next = (kb_raw_head + 1) % KEYBOARD_BUFFER_SIZE;
+    if (raw_next != kb_raw_tail)
+    {
+        kb_raw[kb_raw_head] = scancode;
+        kb_raw_head = raw_next;
+    }
+
     if (scancode & 0x80)
     {
         scancode &= 0x7F;
@@ -98,4 +108,19 @@ int keyboard_peek(void)
     if (kb_head == kb_tail)
         return -1;
     return (unsigned char)kb_buffer[kb_tail];
+}
+
+int keyboard_scancode_nonblock(void)
+{
+    if (kb_raw_head == kb_raw_tail)
+        return -1;
+
+    int sc = kb_raw[kb_raw_tail];
+    kb_raw_tail = (kb_raw_tail + 1) % KEYBOARD_BUFFER_SIZE;
+    return sc;
+}
+
+void keyboard_scancode_flush(void)
+{
+    kb_raw_tail = kb_raw_head;
 }

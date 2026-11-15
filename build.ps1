@@ -46,6 +46,7 @@ $C_FILES = @(
     "kernel\kernel\proc.c",
     "kernel\kernel\pipe.c",
     "kernel\kernel\syscall.c",
+    "kernel\kernel\wayland.c",
     "users\services\render.c",
     "users\services\password_services.c",
     "kernel\arch\x86_64\gdt.c",
@@ -291,6 +292,18 @@ foreach ($app in $APPS) {
         $name = $app.ToUpper() + ".ELF"
         Write-HddFile $HDD $name ([System.IO.File]::ReadAllBytes($elf))
         Write-Host "  $name written"
+    }
+}
+
+$DEMO = "$ROOT\users\apps\wayland_demo.c"
+if (Test-Path $DEMO) {
+    $ErrorActionPreference = "Continue"
+    & "$SDK\build_app.ps1" -Source $DEMO -OutputDir "$BUILD\apps"
+    $ErrorActionPreference = $prev
+    $elf = "$BUILD\apps\wayland_demo.elf"
+    if (Test-Path $elf) {
+        Write-HddFile $HDD "WAYLAND.ELF" ([System.IO.File]::ReadAllBytes($elf))
+        Write-Host "  WAYLAND.ELF written"
     }
 }
 

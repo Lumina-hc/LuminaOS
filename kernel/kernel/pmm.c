@@ -86,6 +86,32 @@ uintptr_t pmm_alloc_zero(void)
     return addr;
 }
 
+uintptr_t pmm_alloc_contig(uint32_t pages)
+{
+    if (pages == 0)
+        return 0;
+
+    uint32_t run = 0;
+    uint32_t start = 0;
+    for (uint32_t page = 0; page < PMM_TOTAL_PAGES; page++) {
+        if (pmm_is_used(page)) {
+            run = 0;
+            continue;
+        }
+        if (run == 0)
+            start = page;
+        run++;
+        if (run == pages) {
+            for (uint32_t i = 0; i < pages; i++)
+                pmm_mark_used(start + i);
+            free_pages -= pages;
+            memset_k((void*)(uintptr_t)(start * PMM_PAGE_SIZE), 0, pages * PMM_PAGE_SIZE);
+            return (uintptr_t)(start * PMM_PAGE_SIZE);
+        }
+    }
+    return 0;
+}
+
 void pmm_free(uintptr_t addr)
 {
     if (addr == 0) return;

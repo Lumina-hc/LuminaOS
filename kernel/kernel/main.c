@@ -15,6 +15,7 @@
 #include <kernel/mouse.h>
 #include <kernel/desktop.h>
 #include <kernel/pipe.h>
+#include <kernel/wayland.h>
 #include <kernel/proc.h>
 #include <kernel/paging.h>
 #include <kernel/gdt.h>
@@ -636,6 +637,7 @@ void kernel_main(uint8_t boot_drive)
     sched_init();
     pipe_init();
     syscall_init();
+    wl_init();
 
     __asm__ volatile ("sti");
 
