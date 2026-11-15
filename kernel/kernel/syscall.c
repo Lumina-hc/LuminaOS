@@ -248,6 +248,14 @@ static long sc_sysinfo(long a, long b, long c, long d)
     return 0;
 }
 
+/* Monotonic millisecond tick count (TIMER_HZ = 1000). Used by the SDL3
+   LUMIA port's timer driver for SDL_GetTicks / SDL_GetPerformanceCounter. */
+static long sc_get_ticks(long a, long b, long c, long d)
+{
+    (void)a; (void)b; (void)c; (void)d;
+    return (long)timer_ticks();
+}
+
 static long sc_win_should_close(long a, long b, long c, long d)
 {
     (void)a; (void)b; (void)c; (void)d;
@@ -443,6 +451,7 @@ static const sc_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYSCALL_CURSOR]     = sc_cursor,
     [SYSCALL_WIN_INFO]   = sc_win_info,
     [SYSCALL_SYSINFO]    = sc_sysinfo,
+    [SYSCALL_GET_TICKS]  = sc_get_ticks,
     [SYSCALL_WIN_SHOULD_CLOSE] = sc_win_should_close,
     [SYSCALL_OPEN_FILE] = sc_open_file,
     [SYSCALL_GET_OPEN_FILE] = sc_get_open_file,

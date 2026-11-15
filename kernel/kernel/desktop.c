@@ -63,6 +63,7 @@ static const desktop_icon_t icons[] = {
     { "About",    0xE0913A, "ABOUT.ELF",    APP_LAUNCH },
     { "System",   0x9B8CFF, "SYSTEM.ELF",   APP_LAUNCH },
     { "Terminal", 0x2FBF9F, "TERMINAL.ELF", APP_LAUNCH },
+    { "SDL Demo", 0x8A6BFF, "SDLDEMO.ELF",  APP_LAUNCH },
     { "Reboot",   0xE05A5A, 0,              APP_REBOOT },
     { "Shutdown", 0x8A93A6, 0,              APP_HALT  },
 };

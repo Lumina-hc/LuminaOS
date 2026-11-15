@@ -2,7 +2,7 @@
 #define PROC_H
 
 #include <stdint.h>
-#include <kernel/isr.h>
+#include "isr.h"
 
 #define MAX_PROCS 32
 #define USER_STACK_PAGES 16

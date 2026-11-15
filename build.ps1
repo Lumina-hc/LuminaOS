@@ -3,7 +3,8 @@ param()
 $ErrorActionPreference = "Stop"
 $ROOT = $PSScriptRoot
 $BUILD = "$ROOT\build64"
-$SDK = Join-Path (Split-Path $ROOT -Parent) "LuminaOS-SDK"
+# SDK is vendored as a submodule so the build is self-contained.
+$SDK = "$ROOT/third_party/LuminaOS-SDK"
 $TOOLCHAIN = "D:\programs\x86_64-elf-tools-windows\bin"
 
 $env:PATH = "$TOOLCHAIN;D:\programs\nasm;$env:PATH"
@@ -292,6 +293,30 @@ foreach ($app in $APPS) {
         Write-HddFile $HDD $name ([System.IO.File]::ReadAllBytes($elf))
         Write-Host "  $name written"
     }
+}
+
+# --- SDL3 demo (optional) -------------------------------------------------
+# Build it with ports/sdl3/build_sdl.sh + ports/sdl3/demo/build_demo.sh,
+# or let this script do it when the required tools are available.
+$SDL_DEMO = "$ROOT/ports/sdl3/demo/demo.elf"
+if (-not (Test-Path $SDL_DEMO)) {
+    $canBuildSDL = (Get-Command bash -ErrorAction SilentlyContinue) -and
+                   (Get-Command cmake -ErrorAction SilentlyContinue) -and
+                   (Get-Command x86_64-elf-gcc -ErrorAction SilentlyContinue)
+    if ($canBuildSDL) {
+        Write-Host "Building SDL3 port + demo..."
+        $sdlPrev = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        & bash "$ROOT/ports/sdl3/build_sdl.sh"
+        & bash "$ROOT/ports/sdl3/demo/build_demo.sh"
+        $ErrorActionPreference = $sdlPrev
+    }
+}
+if (Test-Path $SDL_DEMO) {
+    Write-HddFile $HDD "SDLDEMO.ELF" ([System.IO.File]::ReadAllBytes($SDL_DEMO))
+    Write-Host "  SDLDEMO.ELF written"
+} else {
+    Write-Host "  SDLDEMO.ELF skipped (run ports/sdl3/build_sdl.sh then demo/build_demo.sh)"
 }
 
 $UEFI_SCRIPT = "$ROOT\build_uefi.ps1"

@@ -32,6 +32,7 @@
 #define SYSCALL_GET_OPEN_FILE   26
 #define SYSCALL_WIN_MINIMIZED   27
 #define SYSCALL_MINIMIZE        28
+#define SYSCALL_GET_TICKS       29
 #define SYSCALL_COUNT           40
 #define SYSCALL_PIPE            30
 #define SYSCALL_PIPE_READ       31

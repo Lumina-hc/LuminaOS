@@ -5,7 +5,16 @@
 #include <stdint.h>
 
 #define PAGE_SIZE 4096
-#define MAX_ELF_FILE_SIZE (128 * 1024)
+/* SDL3-based user apps are much larger than the original tiny examples:
+   allow up to 4 MiB of ELF and 1024 pages (4 MiB) per LOAD segment. */
+#define MAX_ELF_FILE_SIZE (4 * 1024 * 1024)
+#define ELF_MAX_PAGES    1024
+
+static void free_elf_buffer(uint64_t vaddr, uint32_t pages)
+{
+    for (uint32_t i = 0; i < pages; i++)
+        pmm_free(vaddr + (uint64_t)i * PAGE_SIZE);
+}
 
 static int elf_valid_header(elf64_header_t* hdr)
 {
@@ -32,46 +41,27 @@ int elf_load(const char* path, uint64_t* entry_out, uint64_t* brk_out)
 
     uint32_t buf_pages = (file_size + PAGE_SIZE - 1) / PAGE_SIZE;
     if (buf_pages == 0) buf_pages = 1;
-    if (buf_pages > 32) return -1;
+    if (buf_pages > ELF_MAX_PAGES) return -1;
 
-    uint32_t phys_addrs[32];
-    uint64_t buf_vaddr = 0;
-    for (uint32_t i = 0; i < buf_pages; i++) {
-        uint32_t phys = pmm_alloc_zero();
-        if (!phys) {
-            for (uint32_t j = 0; j < i; j++)
-                pmm_free(phys_addrs[j]);
-            return -1;
-        }
-        phys_addrs[i] = phys;
-        if (i == 0)
-            buf_vaddr = phys;
-    }
-
-    for (uint32_t i = 1; i < buf_pages; i++) {
-        if (phys_addrs[i] != phys_addrs[i - 1] + PAGE_SIZE) {
-            for (uint32_t j = 0; j < i; j++)
-                pmm_free(phys_addrs[j]);
-            return -1;
-        }
-    }
+    /* Contiguous physical run: buf_vaddr is used directly as a virtual
+       address (physical RAM is identity-mapped), so the whole file must be
+       readable as one linear buffer. */
+    uint64_t buf_vaddr = pmm_alloc_contiguous(buf_pages);
+    if (!buf_vaddr) return -1;
 
     uint32_t got = 0;
     if (fat16_read_file(path, (void*)(uintptr_t)buf_vaddr, file_size, &got) != 0) {
-        for (uint32_t i = 0; i < buf_pages; i++)
-            pmm_free(phys_addrs[i]);
+        free_elf_buffer(buf_vaddr, buf_pages);
         return -1;
     }
     if (got < sizeof(elf64_header_t)) {
-        for (uint32_t i = 0; i < buf_pages; i++)
-            pmm_free(phys_addrs[i]);
+        free_elf_buffer(buf_vaddr, buf_pages);
         return -1;
     }
 
     elf64_header_t* hdr = (elf64_header_t*)(uintptr_t)buf_vaddr;
     if (!elf_valid_header(hdr)) {
-        for (uint32_t i = 0; i < buf_pages; i++)
-            pmm_free(phys_addrs[i]);
+        free_elf_buffer(buf_vaddr, buf_pages);
         return -1;
     }
 
@@ -106,23 +96,24 @@ int elf_load(const char* path, uint64_t* entry_out, uint64_t* brk_out)
         uint64_t num_pages = (page_end - page_start) / PAGE_SIZE;
 
         if (num_pages == 0) continue;
-        if (num_pages > 256) return -1;
+        if (num_pages > ELF_MAX_PAGES) {
+            free_elf_buffer(buf_vaddr, buf_pages);
+            return -1;
+        }
 
-        uint32_t seg_phys[256];
+        static uint32_t seg_phys[ELF_MAX_PAGES];
 
         for (uint64_t p = 0; p < num_pages; p++) {
             uint64_t page_vaddr = page_start + p * PAGE_SIZE;
             uint32_t phys = pmm_alloc_zero();
             if (!phys) {
-                for (uint32_t j = 0; j < buf_pages; j++)
-                    pmm_free(phys_addrs[j]);
+                free_elf_buffer(buf_vaddr, buf_pages);
                 return -1;
             }
             if (!paging_map_user_page(page_vaddr, phys,
                                       PAGE_PRESENT | PAGE_RW | PAGE_USER)) {
                 pmm_free(phys);
-                for (uint32_t j = 0; j < buf_pages; j++)
-                    pmm_free(phys_addrs[j]);
+                free_elf_buffer(buf_vaddr, buf_pages);
                 return -1;
             }
             seg_phys[p] = phys;
@@ -164,8 +155,7 @@ int elf_load(const char* path, uint64_t* entry_out, uint64_t* brk_out)
             max_addr = end_addr;
     }
 
-    for (uint32_t i = 0; i < buf_pages; i++)
-        pmm_free(phys_addrs[i]);
+    free_elf_buffer(buf_vaddr, buf_pages);
 
     if (max_addr == 0)
         return -1;

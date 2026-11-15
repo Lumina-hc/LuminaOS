@@ -3,7 +3,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD="$ROOT/build64"
-SDK="$(cd "$ROOT/.." && pwd)/LuminaOS-SDK"
+# SDK is vendored as a submodule so the build is self-contained.
+SDK="$ROOT/third_party/LuminaOS-SDK"
 TOOLCHAIN="/d/programs/x86_64-elf-tools-windows/bin"
 
 export PATH="$TOOLCHAIN:/d/programs/nasm:$PATH"
@@ -486,6 +487,69 @@ fs=Fat16(p); fs.add_file(name,open(src,"rb").read()); fs.save()
 PYEOF
     echo "  $name written"
 done
+
+# ---------------------------------------------------------------------------
+# SDL3 demo (optional prebuilt ELF)
+# Build with: ports/sdl3/build_sdl.sh && ports/sdl3/demo/build_demo.sh
+# ---------------------------------------------------------------------------
+SDL_DEMO="$ROOT/ports/sdl3/demo/demo.elf"
+if [[ ! -f "$SDL_DEMO" ]] && command -v cmake >/dev/null 2>&1 \
+        && command -v x86_64-elf-gcc >/dev/null 2>&1; then
+    bash "$ROOT/ports/sdl3/build_sdl.sh" || true
+    bash "$ROOT/ports/sdl3/demo/build_demo.sh" || true
+fi
+if [[ -f "$SDL_DEMO" ]]; then
+    python3 - "$BUILD/hdd.img" "SDLDEMO.ELF" "$SDL_DEMO" <<'PYEOF'
+import sys, struct, math
+class Fat16:
+    def __init__(self, path, bps=512, spc=1, reserved=1, nfats=2,
+                 root_entries=512, spf=128):
+        self.path=path; self.bps=bps; self.spc=spc
+        self.reserved=reserved; self.nfats=nfats
+        self.root_entries=root_entries; self.spf=spf
+        self.root_sectors=math.ceil(root_entries*32/bps)
+        self.root_lba=reserved+nfats*spf
+        self.data_lba=self.root_lba+self.root_sectors
+        self.img=bytearray(open(path,"rb").read())
+        self.fat_off=reserved*bps; self.fat_size=spf*bps
+    def _get(self,c): return struct.unpack_from("<H",self.img,self.fat_off+c*2)[0]
+    def _set(self,c,v):
+        for i in range(self.nfats):
+            struct.pack_into("<H",self.img,
+                (self.reserved+i*self.spf)*self.bps+c*2,v)
+    def add_file(self,name,data):
+        n=max(1,math.ceil(len(data)/(self.bps*self.spc)))
+        free=[c for c in range(2,self.fat_size//2) if self._get(c)==0][:n]
+        if len(free)<n: raise RuntimeError("out of space")
+        for i,c in enumerate(free):
+            self._set(c, free[i+1] if i<len(free)-1 else 0xFFF8)
+        for i,c in enumerate(free):
+            off=(self.data_lba+(c-2)*self.spc)*self.bps
+            chunk=data[i*self.bps*self.spc:(i+1)*self.bps*self.spc]
+            self.img[off:off+len(chunk)]=chunk
+        up=name.upper()
+        stem,ext=(up.split(".",1)+[""])[:2] if "." in up else (up,"")
+        n11=(stem[:8].ljust(8)+ext[:3].ljust(3)).encode("ascii")[:11]
+        ro=self.root_lba*self.bps; slot=free_slot=None
+        for i in range(self.root_entries):
+            b=ro+i*32; f=self.img[b]
+            if f in (0,0xE5):
+                if free_slot is None: free_slot=i
+                continue
+            if bytes(self.img[b:b+11])==n11: slot=i; break
+        if slot is None: slot=free_slot
+        e=bytearray(32); e[0:11]=n11; e[11]=0x20
+        struct.pack_into("<H",e,26,free[0])
+        struct.pack_into("<I",e,28,len(data))
+        self.img[ro+slot*32:ro+slot*32+32]=e
+    def save(self): open(self.path,"wb").write(self.img)
+p,name,src=sys.argv[1:4]
+fs=Fat16(p); fs.add_file(name,open(src,"rb").read()); fs.save()
+PYEOF
+    echo "  SDLDEMO.ELF written"
+else
+    echo "  SDLDEMO.ELF skipped (run ports/sdl3/build_sdl.sh then demo/build_demo.sh)"
+fi
 
 echo "Refreshing UEFI boot image..."
 bash "$ROOT/build_uefi.sh"

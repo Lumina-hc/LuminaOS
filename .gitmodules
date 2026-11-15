@@ -1,0 +1,6 @@
+[submodule "third_party/SDL"]
+	path = third_party/SDL
+	url = https://github.com/libsdl-org/SDL
+[submodule "third_party/LuminaOS-SDK"]
+	path = third_party/LuminaOS-SDK
+	url = https://github.com/Lumina-hc/LuminaOS-SDK.git

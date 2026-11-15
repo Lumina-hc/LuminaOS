@@ -86,6 +86,35 @@ uintptr_t pmm_alloc_zero(void)
     return addr;
 }
 
+/* Allocate a physically-contiguous, zeroed run of pages. Needed by the ELF
+   loader, which reads a whole executable into one linear scratch buffer at
+   an identity-mapped physical address. Unlike repeated pmm_alloc_zero()
+   calls this does not depend on the allocator happening to hand out
+   consecutive free pages (which fails once memory is fragmented). */
+uintptr_t pmm_alloc_contiguous(uint32_t pages)
+{
+    if (pages == 0 || pages > PMM_TOTAL_PAGES) return 0;
+
+    for (uint32_t start = 0; start + pages <= PMM_TOTAL_PAGES; start++) {
+        uint32_t i;
+        for (i = 0; i < pages; i++) {
+            if (pmm_is_used(start + i))
+                break;
+        }
+        if (i != pages)
+            continue;
+
+        for (i = 0; i < pages; i++) {
+            pmm_mark_used(start + i);
+            free_pages--;
+            memset_k((void*)(uintptr_t)((start + i) * PMM_PAGE_SIZE), 0,
+                     PMM_PAGE_SIZE);
+        }
+        return (uintptr_t)(start * PMM_PAGE_SIZE);
+    }
+    return 0;
+}
+
 void pmm_free(uintptr_t addr)
 {
     if (addr == 0) return;

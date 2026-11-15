@@ -10,7 +10,7 @@ typedef struct {
     int min_x, min_y, min_w, min_h;
 } win_info_t;
 
-#include <kernel/proc.h>
+#include "proc.h"
 int desktop_run(int fs_ready, const char* user);
 void desktop_splash(void);
 void desktop_win_info(win_info_t* info);
