@@ -1,0 +1,1150 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 94ac8c4..6f6b914 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -3752,6 +3752,31 @@ elseif(NGAGE)
+       scdv
+       gdi
+   )
++
++elseif(LUMIA)
++
++  # LuminaOS: from-scratch x86_64 hobby OS, freestanding ELF user apps,
++  # int 0x80 syscalls, no libc. Native video/timer/filesystem drivers live
++  # in src/<subsystem>/lumia and use the SDK's syscall ABI. The build is
++  # configured entirely by include/build_config/SDL_build_config_lumia.h.
++  sdl_glob_sources(
++    "${SDL3_SOURCE_DIR}/src/video/lumia/*.c"
++    "${SDL3_SOURCE_DIR}/src/video/lumia/*.h"
++  )
++  set(SDL_VIDEO_DRIVER_LUMIA 1)
++  set(HAVE_SDL_VIDEO TRUE)
++
++  sdl_glob_sources("${SDL3_SOURCE_DIR}/src/timer/lumia/*.c")
++  set(SDL_TIMER_LUMIA 1)
++  set(HAVE_SDL_TIMERS TRUE)
++
++  sdl_glob_sources("${SDL3_SOURCE_DIR}/src/filesystem/lumia/*.c")
++  set(SDL_FILESYSTEM_LUMIA 1)
++  set(SDL_FSOPS_LUMIA 1)
++  set(HAVE_SDL_FILESYSTEM TRUE)
++
++  # SDL_uclibc provides the bundled libm (src/libm/*.c); SDL_malloc.c uses
++  # dlmalloc with a static-arena sbrk() from the compat libc.
+ endif()
+ 
+ sdl_sources(${SDL3_SOURCE_DIR}/src/dialog/SDL_dialog.c)
+@@ -4005,7 +4030,7 @@ endif()
+ # We always need to have threads and timers around
+ if(NOT HAVE_SDL_THREADS)
+   # The Emscripten and N-Gage platform has been carefully vetted to work without threads
+-  if(EMSCRIPTEN OR NGAGE)
++  if(EMSCRIPTEN OR NGAGE OR LUMIA)
+     set(SDL_THREADS_DISABLED 1)
+     sdl_glob_sources(
+       "${SDL3_SOURCE_DIR}/src/thread/generic/*.c"
+@@ -4035,8 +4060,15 @@ endif()
+ 
+ # config variables may contain generator expression, so we need to generate SDL_build_config.h in 2 steps:
+ # 1. replace all `#cmakedefine`'s and `@abc@`
+-configure_file("${SDL3_SOURCE_DIR}/include/build_config/SDL_build_config.h.cmake"
+-  "${SDL3_BINARY_DIR}/CMakeFiles/SDL_build_config.h.intermediate")
++# LUMIA ships a hand-written config header (no libc feature probing needed),
++# so use it verbatim instead of the CMake-generated template.
++if(LUMIA)
++  set(SDL_BUILD_CONFIG_TEMPLATE "${SDL3_SOURCE_DIR}/include/build_config/SDL_build_config_lumia.h")
++else()
++  set(SDL_BUILD_CONFIG_TEMPLATE "${SDL3_SOURCE_DIR}/include/build_config/SDL_build_config.h.cmake")
++endif()
++configure_file("${SDL_BUILD_CONFIG_TEMPLATE}"
++  "${SDL3_BINARY_DIR}/CMakeFiles/SDL_build_config.h.intermediate" COPYONLY)
+ # 2. generate SDL_build_config.h in an build_type-dependent folder (which should be first in the include search path)
+ file(GENERATE
+   OUTPUT "${SDL3_BINARY_DIR}/include-config-$<LOWER_CASE:$<CONFIG>>/build_config/SDL_build_config.h"
+diff --git a/cmake/sdlplatform.cmake b/cmake/sdlplatform.cmake
+index 14455f4..aad8833 100644
+--- a/cmake/sdlplatform.cmake
++++ b/cmake/sdlplatform.cmake
+@@ -28,6 +28,8 @@ function(SDL_DetectCMakePlatform)
+     set(sdl_cmake_platform n3ds)
+   elseif(CMAKE_SYSTEM_NAME STREQUAL "DOS")
+     set(sdl_cmake_platform dos)
++  elseif(CMAKE_SYSTEM_NAME STREQUAL "LuminaOS")
++    set(sdl_cmake_platform lumia)
+   elseif(NGAGESDK)
+     set(sdl_cmake_platform ngage)
+   elseif(PS2)
+diff --git a/include/SDL3/SDL_platform_defines.h b/include/SDL3/SDL_platform_defines.h
+index 0f5ab54..98030e5 100644
+--- a/include/SDL3/SDL_platform_defines.h
++++ b/include/SDL3/SDL_platform_defines.h
+@@ -516,4 +516,13 @@
+ #define SDL_PLATFORM_HURD 1
+ #endif
+ 
++#ifdef __LUMIA__
++
++/**
++ * A preprocessor macro that is only defined if compiling for the LuminaOS
++ * hobby operating system (a from-scratch x86_64 kernel).
++ */
++#define SDL_PLATFORM_LUMIA 1
++#endif
++
+ #endif /* SDL_platform_defines_h_ */
+diff --git a/include/build_config/SDL_build_config.h b/include/build_config/SDL_build_config.h
+index a1658c2..644d36e 100644
+--- a/include/build_config/SDL_build_config.h
++++ b/include/build_config/SDL_build_config.h
+@@ -45,6 +45,8 @@
+ #include "SDL_build_config_ios.h"
+ #elif defined(SDL_PLATFORM_ANDROID)
+ #include "SDL_build_config_android.h"
++#elif defined(SDL_PLATFORM_LUMIA)
++#include "SDL_build_config_lumia.h"
+ #else
+ /* This is a minimal configuration just to get SDL running on new platforms. */
+ #include "SDL_build_config_minimal.h"
+diff --git a/include/build_config/SDL_build_config_lumia.h b/include/build_config/SDL_build_config_lumia.h
+new file mode 100644
+index 0000000..4fa7d63
+--- /dev/null
++++ b/include/build_config/SDL_build_config_lumia.h
+@@ -0,0 +1,91 @@
++/*
++  Simple DirectMedia Layer
++  Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
++
++  This software is provided 'as-is', without any express or implied
++  warranty.  In no event will the authors be held liable for any damages
++  arising from the use of this software.
++
++  LuminaOS port: a from-scratch x86_64 hobby OS with no C library and no
++  POSIX layer. This config is derived from SDL_build_config_minimal.h and
++  adapted for the LUMIA platform: a native software-framebuffer video driver
++  plus mouse/keyboard input, a timer driver and a filesystem driver, all
++  implemented on top of the kernel's int 0x80 syscall ABI.
++
++  Deliberately NO HAVE_LIBC / HAVE_MALLOC / HAVE_MEM / HAVE_STR defines:
++  leaving them undefined makes SDL use its own bundled implementations
++  in src/stdlib, so no host libc is required. The only libc-y thing SDL
++  still needs is an sbrk()-style morecore, which the LUMIA compat layer
++  in ports/sdl3/compat/libc.c provides from a static arena.
++
++  The bundled SDL_string / SDL_snprintf / SDL_malloc cover strings,
++  formatting and allocation. SDL's small libm subset in src/libm covers
++  the math routines the render code paths reference.
++*/
++
++#ifndef SDL_build_config_lumia_h_
++#define SDL_build_config_lumia_h_
++#define SDL_build_config_h_
++
++#include <SDL3/SDL_platform_defines.h>
++
++/* Freestanding type headers are provided by x86_64-elf-gcc itself. */
++#define HAVE_STDARG_H 1
++#define HAVE_STDDEF_H 1
++#define HAVE_STDINT_H 1
++
++#if !defined(HAVE_STDINT_H) && !defined(_STDINT_H_)
++#if defined(_MSC_VER) && (_MSC_VER < 1600)
++typedef signed __int8 int8_t;
++typedef unsigned __int8 uint8_t;
++typedef signed __int16 int16_t;
++typedef unsigned __int16 uint16_t;
++typedef signed __int32 int32_t;
++typedef unsigned __int32 uint32_t;
++typedef signed __int64 int64_t;
++typedef unsigned __int64 uint64_t;
++#ifndef _UINTPTR_T_DEFINED
++#ifdef  _WIN64
++typedef unsigned __int64 uintptr_t;
++#else
++typedef unsigned int uintptr_t;
++#endif
++#endif
++#endif
++#endif
++
++#ifdef __GNUC__
++#define HAVE_GCC_SYNC_LOCK_TEST_AND_SET 1
++#endif
++
++/* No threads: generic stubs are compiled by CMake (mirrors Emscripten/N-Gage). */
++#define SDL_THREADS_DISABLED 1
++
++/* ---- subsystems: turn almost everything off ----
++   These mirror the -DSDL_* options passed by ports/sdl3/build_sdl.sh; since
++   this header replaces CMake's generated config, the DISABLED macros must be
++   repeated here or SDL would still compile the full (unused) subsystems. */
++#define SDL_AUDIO_DRIVER_DUMMY 1
++#define SDL_JOYSTICK_DISABLED 1
++#define SDL_HAPTIC_DISABLED 1
++#define SDL_HIDAPI_DISABLED 1
++#define SDL_PROCESS_DUMMY 1
++#define SDL_SENSOR_DISABLED 1
++#define SDL_LOADSO_DUMMY 1
++#define SDL_CAMERA_DRIVER_DUMMY 1
++#define SDL_DIALOG_DUMMY 1
++#define SDL_TRAY_DUMMY 1
++#define SDL_TIME_DUMMY 1
++#define SDL_RENDER_DISABLED 1
++#define SDL_GPU_DISABLED 1
++
++/* ---- the LUMIA native drivers ---- */
++#define SDL_VIDEO_DRIVER_LUMIA 1
++#define SDL_FILESYSTEM_LUMIA 1
++#define SDL_FSOPS_LUMIA 1
++
++/* Timer: we provide src/timer/lumia/SDL_systimer.c */
++#define HAVE_SDL_TIMERS 1
++#define SDL_TIMER_LUMIA 1
++
++#endif /* SDL_build_config_lumia_h_ */
+diff --git a/src/SDL.c b/src/SDL.c
+index 6b6c201..3daaa07 100644
+--- a/src/SDL.c
++++ b/src/SDL.c
+@@ -111,6 +111,13 @@ SDL_NORETURN void SDL_ExitProcess(int exitcode)
+     exit(exitcode);
+ #elif defined(SDL_PLATFORM_HAIKU)  // Haiku has _Exit, but it's not marked noreturn.
+     _exit(exitcode);
++#elif defined(SDL_PLATFORM_LUMIA)
++    {
++        /* LuminaOS: terminate the current user process via int 0x80. */
++        extern void lumia_sys_exit(void);
++        lumia_sys_exit();
++        for (;;) { /* not reached */ }
++    }
+ #elif defined(HAVE__EXIT) // Upper case _Exit()
+     _Exit(exitcode);
+ #else
+@@ -844,6 +851,8 @@ const char *SDL_GetPlatform(void)
+     return "Nintendo 3DS";
+ #elif defined(SDL_PLATFORM_HURD)
+     return "GNU/Hurd";
++#elif defined(SDL_PLATFORM_LUMIA)
++    return "LuminaOS";
+ #elif defined(__managarm__)
+     return "Managarm";
+ #else
+diff --git a/src/dynapi/SDL_dynapi.h b/src/dynapi/SDL_dynapi.h
+index 04c310c..346dd59 100644
+--- a/src/dynapi/SDL_dynapi.h
++++ b/src/dynapi/SDL_dynapi.h
+@@ -67,6 +67,8 @@
+ #define SDL_DYNAMIC_API 0 // devkitARM doesn't support dynamic linking
+ #elif defined(SDL_PLATFORM_NGAGE)
+ #define SDL_DYNAMIC_API 0
++#elif defined(SDL_PLATFORM_LUMIA)
++#define SDL_DYNAMIC_API 0 // LuminaOS is freestanding; no dlopen or dynamic linking
+ #elif defined(SDL_PLATFORM_DOS)
+ #define SDL_DYNAMIC_API 0 // DJGPP doesn't support dynamic linking
+ #elif defined(DYNAPI_NEEDS_DLOPEN) && !defined(HAVE_DLOPEN)
+diff --git a/src/filesystem/lumia/SDL_sysfilesystem.c b/src/filesystem/lumia/SDL_sysfilesystem.c
+new file mode 100644
+index 0000000..8d02e77
+--- /dev/null
++++ b/src/filesystem/lumia/SDL_sysfilesystem.c
+@@ -0,0 +1,338 @@
++/*
++  Simple DirectMedia Layer
++  Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
++
++  LuminaOS SDL3 filesystem driver.
++
++  The kernel exposes a flat FAT16-ish filesystem through three path-based
++  syscalls: FILE_READ(path, buf, max), FILE_WRITE(path, buf, n) and
++  FILE_LIST(buf, max) which returns dir_entry_t records. There is no
++  create/rename/remove/seek API, so only enumeration, path info, base/pref
++  paths and a simple read/write-backed storage backend are provided; the
++  mutating operations report SDL_Unsupported().
++*/
++#include "SDL_internal.h"
++
++#if defined(SDL_FILESYSTEM_LUMIA) || defined(SDL_FSOPS_LUMIA)
++
++#include "../SDL_sysfilesystem.h"
++#include "../../video/lumia/lumia_syscall.h"
++
++#define LUMIA_FS_ATTR_DIRECTORY 0x10
++#define LUMIA_FS_MAX_ENTRIES    64
++
++/* --- base / pref / user paths ------------------------------------------- */
++
++char *SDL_SYS_GetBasePath(void)
++{
++    /* LuminaOS apps see a flat root filesystem; there is no notion of an
++       executable directory. Return a stable "/" root. */
++    return SDL_strdup("/");
++}
++
++char *SDL_SYS_GetExeName(void)
++{
++    return SDL_strdup("app.elf");
++}
++
++char *SDL_SYS_GetPrefPath(const char *org, const char *app)
++{
++    (void)org; (void)app;
++    /* Preferences are stored at the flat root; no per-app subdirectories. */
++    return SDL_strdup("/");
++}
++
++char *SDL_SYS_GetUserFolder(SDL_Folder folder)
++{
++    (void)folder;
++    return SDL_strdup("/");
++}
++
++char *SDL_SYS_GetCurrentDirectory(void)
++{
++    return SDL_strdup("/");
++}
++
++/* --- enumeration -------------------------------------------------------- */
++
++/* Trim trailing spaces from a FAT 8.3 name into a NUL-terminated buffer. */
++static void LUMIA_TrimName(const char name[12], char out[13])
++{
++    int len = 12;
++    int i;
++    while (len > 0 && name[len - 1] == ' ') {
++        --len;
++    }
++    for (i = 0; i < len; ++i) {
++        out[i] = name[i];
++    }
++    out[len] = '\0';
++}
++
++bool SDL_SYS_EnumerateDirectory(const char *path, SDL_EnumerateDirectoryCallback cb, void *userdata)
++{
++    lumia_dir_entry_t entries[LUMIA_FS_MAX_ENTRIES];
++    int count, i;
++
++    (void)path; /* kernel lists the root directory regardless of path */
++
++    count = lumia_file_list(entries, (int)sizeof(entries));
++    if (count < 0) {
++        return SDL_SetError("LUMIA FILE_LIST failed");
++    }
++
++    for (i = 0; i < count; ++i) {
++        char fname[13];
++        SDL_EnumerationResult result;
++
++        LUMIA_TrimName(entries[i].name, fname);
++        if (fname[0] == '\0') {
++            continue;
++        }
++        result = cb(userdata, path, fname);
++        if (result == SDL_ENUM_SUCCESS) {
++            break;
++        } else if (result == SDL_ENUM_FAILURE) {
++            return SDL_SetError("Directory enumeration callback failed");
++        }
++    }
++    return true;
++}
++
++/* --- path info ---------------------------------------------------------- */
++
++bool SDL_SYS_GetPathInfo(const char *path, SDL_PathInfo *info)
++{
++    lumia_dir_entry_t entries[LUMIA_FS_MAX_ENTRIES];
++    int count, i;
++    const char *name = path;
++
++    if (!info) {
++        return SDL_SetError("Invalid SDL_PathInfo pointer");
++    }
++    SDL_zerop(info);
++
++    /* Skip a leading '/' so "/FOO.TXT" matches the flat root entry. */
++    while (*name == '/') {
++        ++name;
++    }
++
++    count = lumia_file_list(entries, (int)sizeof(entries));
++    if (count < 0) {
++        return SDL_SetError("LUMIA FILE_LIST failed");
++    }
++
++    for (i = 0; i < count; ++i) {
++        char fname[13];
++        LUMIA_TrimName(entries[i].name, fname);
++        if (fname[0] == '\0') {
++            continue;
++        }
++        if (SDL_strcasecmp(fname, name) == 0) {
++            info->type = (entries[i].attr & LUMIA_FS_ATTR_DIRECTORY)
++                             ? SDL_PATHTYPE_DIRECTORY
++                             : SDL_PATHTYPE_FILE;
++            info->size = (Uint64)entries[i].size;
++            /* FAT16 timestamps are not exposed by the syscall; leave 0. */
++            return true;
++        }
++    }
++
++    info->type = SDL_PATHTYPE_NONE;
++    return SDL_SetError("Path does not exist: %s", path);
++}
++
++/* --- mutating operations: no kernel API --------------------------------- */
++
++bool SDL_SYS_RemovePath(const char *path)
++{
++    (void)path;
++    return SDL_Unsupported();
++}
++
++bool SDL_SYS_RenamePath(const char *oldpath, const char *newpath)
++{
++    (void)oldpath; (void)newpath;
++    return SDL_Unsupported();
++}
++
++bool SDL_SYS_CopyFile(const char *oldpath, const char *newpath)
++{
++    (void)oldpath; (void)newpath;
++    return SDL_Unsupported();
++}
++
++bool SDL_SYS_CreateDirectory(const char *path)
++{
++    (void)path;
++    return SDL_Unsupported();
++}
++
++/* --- SDL_IOFromFile backend ---------------------------------------------
++   The kernel's FILE_READ/FILE_WRITE are whole-file, path-based calls with a
++   4096-byte maximum. We therefore read the entire file into memory at open
++   time and serve a normal SDL_IOStream over that buffer; writes are buffered
++   and flushed back to FILE_WRITE on close. This keeps SDL_LoadFile / BMP /
++   WAV loading working for files up to the kernel's buffer limit.
++*/
++typedef struct LUMIA_IOData
++{
++    char *buf;        /* in-memory file contents */
++    size_t size;      /* valid bytes */
++    size_t cap;       /* allocated bytes */
++    size_t pos;       /* current stream position */
++    bool writable;
++    bool dirty;
++    char path[64];    /* FAT 8.3 name */
++} LUMIA_IOData;
++
++static Sint64 SDLCALL LUMIA_IO_size(void *userdata)
++{
++    LUMIA_IOData *io = (LUMIA_IOData *)userdata;
++    return (Sint64)io->size;
++}
++
++static Sint64 SDLCALL LUMIA_IO_seek(void *userdata, Sint64 offset, SDL_IOWhence whence)
++{
++    LUMIA_IOData *io = (LUMIA_IOData *)userdata;
++    Sint64 base;
++
++    switch (whence) {
++    case SDL_IO_SEEK_SET: base = 0; break;
++    case SDL_IO_SEEK_CUR: base = (Sint64)io->pos; break;
++    case SDL_IO_SEEK_END: base = (Sint64)io->size; break;
++    default: return -1;
++    }
++    {
++        Sint64 newpos = base + offset;
++        if (newpos < 0) {
++            return -1;
++        }
++        io->pos = (size_t)newpos;
++        return newpos;
++    }
++}
++
++static size_t SDLCALL LUMIA_IO_read(void *userdata, void *ptr, size_t size, SDL_IOStatus *status)
++{
++    LUMIA_IOData *io = (LUMIA_IOData *)userdata;
++    size_t avail;
++
++    if (io->pos >= io->size) {
++        *status = SDL_IO_STATUS_EOF;
++        return 0;
++    }
++    avail = io->size - io->pos;
++    if (size > avail) {
++        size = avail;
++    }
++    SDL_memcpy(ptr, io->buf + io->pos, size);
++    io->pos += size;
++    return size;
++}
++
++static size_t SDLCALL LUMIA_IO_write(void *userdata, const void *ptr, size_t size, SDL_IOStatus *status)
++{
++    LUMIA_IOData *io = (LUMIA_IOData *)userdata;
++
++    if (!io->writable) {
++        *status = SDL_IO_STATUS_READONLY;
++        return 0;
++    }
++    if (io->pos + size > io->cap) {
++        size_t newcap = (io->pos + size + 4095) & ~(size_t)4095;
++        char *nb = (char *)SDL_realloc(io->buf, newcap);
++        if (!nb) {
++            *status = SDL_IO_STATUS_ERROR;
++            return 0;
++        }
++        io->buf = nb;
++        io->cap = newcap;
++    }
++    SDL_memcpy(io->buf + io->pos, ptr, size);
++    io->pos += size;
++    if (io->pos > io->size) {
++        io->size = io->pos;
++    }
++    io->dirty = true;
++    return size;
++}
++
++static bool SDLCALL LUMIA_IO_flush(void *userdata, SDL_IOStatus *status)
++{
++    LUMIA_IOData *io = (LUMIA_IOData *)userdata;
++    (void)status;
++    if (io->dirty && io->writable) {
++        if (lumia_file_write(io->path, io->buf, (int)io->size) < 0) {
++            return false;
++        }
++        io->dirty = false;
++    }
++    return true;
++}
++
++static bool SDLCALL LUMIA_IO_close(void *userdata)
++{
++    LUMIA_IOData *io = (LUMIA_IOData *)userdata;
++    bool ok = true;
++    if (io->dirty && io->writable) {
++        if (lumia_file_write(io->path, io->buf, (int)io->size) < 0) {
++            ok = false;
++        }
++    }
++    SDL_free(io->buf);
++    SDL_free(io);
++    return ok;
++}
++
++SDL_IOStream *SDL_LUMIA_IOFromFile(const char *file, const char *mode)
++{
++    LUMIA_IOData *io;
++    SDL_IOStreamInterface iface;
++    SDL_IOStream *iostr;
++    const char *name = file;
++    bool writable = (SDL_strchr(mode, 'w') != NULL) ||
++                    (SDL_strchr(mode, 'a') != NULL) ||
++                    (SDL_strchr(mode, '+') != NULL);
++    bool truncate = SDL_strchr(mode, 'w') != NULL;
++
++    while (*name == '/') {
++        ++name;
++    }
++
++    io = (LUMIA_IOData *)SDL_calloc(1, sizeof(*io));
++    if (!io) {
++        return NULL;
++    }
++    SDL_strlcpy(io->path, name, sizeof(io->path));
++    io->writable = writable;
++
++    io->cap = 4096;
++    io->buf = (char *)SDL_malloc(io->cap);
++    if (!io->buf) {
++        SDL_free(io);
++        return NULL;
++    }
++
++    if (!truncate) {
++        int n = lumia_file_read(name, io->buf, (int)io->cap);
++        io->size = (n > 0) ? (size_t)n : 0;
++    }
++    io->pos = (SDL_strchr(mode, 'a') != NULL) ? io->size : 0;
++
++    SDL_INIT_INTERFACE(&iface);
++    iface.size = LUMIA_IO_size;
++    iface.seek = LUMIA_IO_seek;
++    iface.read = LUMIA_IO_read;
++    iface.write = LUMIA_IO_write;
++    iface.flush = LUMIA_IO_flush;
++    iface.close = LUMIA_IO_close;
++
++    iostr = SDL_OpenIO(&iface, io);
++    if (!iostr) {
++        LUMIA_IO_close(io);
++    }
++    return iostr;
++}
++
++#endif /* SDL_FILESYSTEM_LUMIA || SDL_FSOPS_LUMIA */
+diff --git a/src/io/SDL_iostream.c b/src/io/SDL_iostream.c
+index fb78fc2..50fe935 100644
+--- a/src/io/SDL_iostream.c
++++ b/src/io/SDL_iostream.c
+@@ -1173,6 +1173,12 @@ SDL_IOStream *SDL_IOFromFile(const char *file, const char *mode)
+         iostr = SDL_IOFromHandle(handle, mode, true);
+     }
+ 
++#elif defined(SDL_PLATFORM_LUMIA)
++    /* LuminaOS: whole-file read/write through the FILE_READ/FILE_WRITE
++       syscalls, surfaced as a normal in-memory SDL_IOStream. */
++    extern SDL_IOStream *SDL_LUMIA_IOFromFile(const char *file, const char *mode);
++    iostr = SDL_LUMIA_IOFromFile(file, mode);
++
+ #elif defined(HAVE_STDIO_H)
+     {
+         #if defined(SDL_PLATFORM_3DS)
+diff --git a/src/timer/lumia/SDL_systimer.c b/src/timer/lumia/SDL_systimer.c
+new file mode 100644
+index 0000000..1afb4f6
+--- /dev/null
++++ b/src/timer/lumia/SDL_systimer.c
+@@ -0,0 +1,42 @@
++/*
++  Simple DirectMedia Layer
++  Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
++
++  LuminaOS SDL3 timer driver.
++
++  The kernel exposes a monotonic millisecond tick counter through the
++  GET_TICKS syscall (TIMER_HZ = 1000). SDL's performance counter/frequency
++  pair is therefore expressed in 1 kHz units, and SDL_SYS_DelayNS() maps
++  onto the SLEEP syscall (also millisecond resolution).
++*/
++#include "SDL_internal.h"
++
++#ifdef SDL_TIMER_LUMIA
++
++#include "../SDL_timer_c.h"
++#include "../../video/lumia/lumia_syscall.h"
++
++Uint64 SDL_GetPerformanceCounter(void)
++{
++    return (Uint64)lumia_get_ticks();
++}
++
++Uint64 SDL_GetPerformanceFrequency(void)
++{
++    return 1000; /* TIMER_HZ: 1000 ticks per second */
++}
++
++void SDL_SYS_DelayNS(Uint64 ns)
++{
++    /* The SLEEP syscall has millisecond resolution. Round up so we never
++       sleep for less time than requested. */
++    Uint64 ms = (ns + 999999ull) / 1000000ull;
++    if (ms == 0 && ns != 0) {
++        ms = 1;
++    }
++    if (ms > 0) {
++        lumia_sys_sleep((int)(ms > 0x7fffffff ? 0x7fffffff : (long)ms));
++    }
++}
++
++#endif /* SDL_TIMER_LUMIA */
+diff --git a/src/video/SDL_sysvideo.h b/src/video/SDL_sysvideo.h
+index f4c6e50..6f53c29 100644
+--- a/src/video/SDL_sysvideo.h
++++ b/src/video/SDL_sysvideo.h
+@@ -565,6 +565,7 @@ extern VideoBootStrap OFFSCREEN_bootstrap;
+ extern VideoBootStrap QNX_bootstrap;
+ extern VideoBootStrap OPENVR_bootstrap;
+ extern VideoBootStrap DOSVESA_bootstrap;
++extern VideoBootStrap LUMIA_bootstrap;
+ 
+ extern bool SDL_UninitializedVideo(void);
+ // Use SDL_OnVideoThread() sparingly, to avoid regressions in use cases that currently happen to work
+diff --git a/src/video/SDL_video.c b/src/video/SDL_video.c
+index 6a75e19..a563027 100644
+--- a/src/video/SDL_video.c
++++ b/src/video/SDL_video.c
+@@ -146,6 +146,9 @@ static VideoBootStrap *bootstrap[] = {
+ #ifdef SDL_VIDEO_DRIVER_OFFSCREEN
+     &OFFSCREEN_bootstrap,
+ #endif
++#ifdef SDL_VIDEO_DRIVER_LUMIA
++    &LUMIA_bootstrap,
++#endif
+ #ifdef SDL_VIDEO_DRIVER_DUMMY
+     &DUMMY_bootstrap,
+ #ifdef SDL_INPUT_LINUXEV
+diff --git a/src/video/lumia/SDL_lumiaevents.c b/src/video/lumia/SDL_lumiaevents.c
+new file mode 100644
+index 0000000..5935684
+--- /dev/null
++++ b/src/video/lumia/SDL_lumiaevents.c
+@@ -0,0 +1,93 @@
++/*
++  LuminaOS SDL3 video driver - event pump.
++
++  Polls the LuminaOS kernel's non-blocking keyboard/mouse syscalls once per
++  SDL_PumpEvents() and injects the results through SDL's event layer.
++*/
++#include "SDL_internal.h"
++
++#ifdef SDL_VIDEO_DRIVER_LUMIA
++
++#include "../SDL_sysvideo.h"
++#include "../../events/SDL_events_c.h"
++#include "../../events/SDL_keyboard_c.h"
++#include "../../events/SDL_mouse_c.h"
++#include "SDL_lumiavideo.h"
++#include "lumia_syscall.h"
++
++/* LuminaOS getchar_nb() yields ASCII/control codes. Map the common ones to
++   SDL scancodes; everything else falls back to SDL_SCANCODE_UNKNOWN. */
++static SDL_Scancode LUMIA_ScancodeFromAscii(int ch)
++{
++    if (ch >= 'a' && ch <= 'z') {
++        return (SDL_Scancode)(SDL_SCANCODE_A + (ch - 'a'));
++    }
++    if (ch >= 'A' && ch <= 'Z') {
++        return (SDL_Scancode)(SDL_SCANCODE_A + (ch - 'A'));
++    }
++    if (ch >= '0' && ch <= '9') {
++        return (SDL_Scancode)(SDL_SCANCODE_0 + (ch - '0'));
++    }
++    switch (ch) {
++    case ' ':        return SDL_SCANCODE_SPACE;
++    case '\n':
++    case '\r':       return SDL_SCANCODE_RETURN;
++    case '\t':       return SDL_SCANCODE_TAB;
++    case 8:
++    case 127:        return SDL_SCANCODE_BACKSPACE;
++    case 27:         return SDL_SCANCODE_ESCAPE;
++    default:         return SDL_SCANCODE_UNKNOWN;
++    }
++}
++
++void LUMIA_PumpEvents(SDL_VideoDevice *_this)
++{
++    SDL_Window *window;
++    static bool prev_left, prev_right;
++    int x, y;
++    Uint64 now;
++
++    (void)_this;
++    now = SDL_GetTicksNS();
++
++    /* Close request from the window manager / OS. */
++    if (lumia_sys_win_should_close()) {
++        SDL_SendQuit();
++    }
++
++    /* Mouse motion (absolute coordinates relative to the active window). */
++    window = SDL_GetMouseFocus();
++    x = lumia_mouse_x();
++    y = lumia_mouse_y();
++    if (window) {
++        SDL_SendMouseMotion(now, window, 0, false, (float)x, (float)y);
++    }
++
++    /* Mouse buttons: compare against the previous poll to generate events. */
++    {
++        bool left = lumia_mouse_left() ? true : false;
++        bool right = lumia_mouse_right() ? true : false;
++        if (window) {
++            if (left != prev_left) {
++                SDL_SendMouseButton(now, window, 0, SDL_BUTTON_LEFT, left);
++            }
++            if (right != prev_right) {
++                SDL_SendMouseButton(now, window, 0, SDL_BUTTON_RIGHT, right);
++            }
++        }
++        prev_left = left;
++        prev_right = right;
++    }
++
++    /* Keyboard: non-blocking read, one key per pump. */
++    {
++        int ch = lumia_getchar_nb();
++        if (ch >= 0 && ch != 0) {
++            SDL_Scancode scancode = LUMIA_ScancodeFromAscii(ch);
++            SDL_SendKeyboardKey(now, 0, ch, scancode, true);
++            SDL_SendKeyboardKey(now, 0, ch, scancode, false);
++        }
++    }
++}
++
++#endif /* SDL_VIDEO_DRIVER_LUMIA */
+diff --git a/src/video/lumia/SDL_lumiaframebuffer.c b/src/video/lumia/SDL_lumiaframebuffer.c
+new file mode 100644
+index 0000000..5adc5b8
+--- /dev/null
++++ b/src/video/lumia/SDL_lumiaframebuffer.c
+@@ -0,0 +1,120 @@
++/*
++  LuminaOS SDL3 video driver - software framebuffer.
++
++  Mirrors src/video/dummy/SDL_nullframebuffer.c, but UpdateWindowFramebuffer
++  pushes the SDL surface to the screen through the LuminaOS gfx syscalls.
++
++  LuminaOS exposes no bulk framebuffer-blit syscall, so we blit with one
++  FILL_RECT per horizontal run of identical pixels. This is slow at high
++  resolutions but keeps the kernel ABI unchanged for this first port.
++*/
++#include "SDL_internal.h"
++
++#ifdef SDL_VIDEO_DRIVER_LUMIA
++
++#include "../SDL_sysvideo.h"
++#include "../SDL_pixels_c.h"
++#include "../../SDL_properties_c.h"
++#include "SDL_lumiavideo.h"
++#include "lumia_syscall.h"
++
++bool SDL_LUMIA_CreateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
++                                       SDL_PixelFormat *format, void **pixels, int *pitch)
++{
++    SDL_Surface *surface;
++    const SDL_PixelFormat surface_format = SDL_PIXELFORMAT_XRGB8888;
++    int w, h;
++
++    (void)_this;
++
++    SDL_GetWindowSizeInPixels(window, &w, &h);
++    surface = SDL_CreateSurfaceZeroed(w, h, surface_format);
++    if (!surface) {
++        return false;
++    }
++
++    SDL_SetSurfaceProperty(SDL_GetWindowProperties(window), LUMIA_SURFACE, surface);
++    *format = surface_format;
++    *pixels = surface->pixels;
++    *pitch = surface->pitch;
++    return true;
++}
++
++void SDL_LUMIA_DestroyWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window)
++{
++    (void)_this;
++    SDL_ClearProperty(SDL_GetWindowProperties(window), LUMIA_SURFACE);
++}
++
++/* Blit a rectangle of XRGB8888 pixels using horizontal runs. */
++static void LUMIA_BlitSurface(SDL_Surface *surface, const SDL_Rect *dirty)
++{
++    const Uint32 *row;
++    int y, x;
++
++    if (SDL_LockSurface(surface) < 0) {
++        return;
++    }
++
++    for (y = dirty->y; y < dirty->y + dirty->h; ++y) {
++        if (y < 0 || y >= surface->h) {
++            continue;
++        }
++        row = (const Uint32 *)((const Uint8 *)surface->pixels + (size_t)y * surface->pitch);
++        x = dirty->x;
++        while (x < dirty->x + dirty->w) {
++            Uint32 color;
++            int run;
++
++            if (x < 0 || x >= surface->w) {
++                ++x;
++                continue;
++            }
++            color = row[x];
++            run = 1;
++            while (x + run < dirty->x + dirty->w &&
++                   x + run < surface->w &&
++                   row[x + run] == color) {
++                ++run;
++            }
++            /* gfx_fill_rect packs w | (h << 16); keep w within 16 bits. */
++            if (run > 0xffff) {
++                run = 0xffff;
++            }
++            lumia_gfx_fill_rect(x, y, run, 1, color);
++            x += run;
++        }
++    }
++
++    SDL_UnlockSurface(surface);
++}
++
++bool SDL_LUMIA_UpdateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
++                                       const SDL_Rect *rects, int numrects)
++{
++    SDL_Surface *surface;
++    int i;
++
++    (void)_this;
++
++    surface = (SDL_Surface *)SDL_GetPointerProperty(SDL_GetWindowProperties(window),
++                                                    LUMIA_SURFACE, NULL);
++    if (!surface) {
++        return SDL_SetError("Couldn't find LUMIA surface for window");
++    }
++
++    if (numrects == 0) {
++        SDL_Rect full = { 0, 0, surface->w, surface->h };
++        LUMIA_BlitSurface(surface, &full);
++    } else {
++        for (i = 0; i < numrects; ++i) {
++            LUMIA_BlitSurface(surface, &rects[i]);
++        }
++    }
++
++    /* Blit the window surface to the framebuffer. */
++    lumia_gfx_flush();
++    return true;
++}
++
++#endif /* SDL_VIDEO_DRIVER_LUMIA */
+diff --git a/src/video/lumia/SDL_lumiavideo.c b/src/video/lumia/SDL_lumiavideo.c
+new file mode 100644
+index 0000000..f680067
+--- /dev/null
++++ b/src/video/lumia/SDL_lumiavideo.c
+@@ -0,0 +1,92 @@
++/*
++  LuminaOS SDL3 video driver - bootstrap and device setup.
++
++  LuminaOS user apps are freestanding ELF64 processes. When a window is
++  foreground, gfx_* syscalls draw into a window-local surface which the
++  kernel blits to the back buffer on gfx_flush(). We expose that as a single
++  software-framebuffer display whose size comes from gfx_w()/gfx_h().
++*/
++#include "SDL_internal.h"
++
++#ifdef SDL_VIDEO_DRIVER_LUMIA
++
++#include "../SDL_sysvideo.h"
++#include "../SDL_pixels_c.h"
++#include "../../events/SDL_events_c.h"
++
++#include "SDL_lumiavideo.h"
++#include "lumia_syscall.h"
++
++#define LUMIAVID_DRIVER_NAME "lumia"
++
++/* Forward declarations (defined below). */
++static bool LUMIA_SetRelativeMouseMode(bool enabled);
++bool LUMIA_VideoInit(SDL_VideoDevice *_this);
++void LUMIA_VideoQuit(SDL_VideoDevice *_this);
++
++/* ---- device lifecycle -------------------------------------------------- */
++static void LUMIA_DeleteDevice(SDL_VideoDevice *device)
++{
++    SDL_free(device);
++}
++
++static SDL_VideoDevice *LUMIA_CreateDevice(void)
++{
++    SDL_VideoDevice *device = (SDL_VideoDevice *)SDL_calloc(1, sizeof(SDL_VideoDevice));
++    if (!device) {
++        return NULL;
++    }
++
++    device->VideoInit = LUMIA_VideoInit;
++    device->VideoQuit = LUMIA_VideoQuit;
++    device->PumpEvents = LUMIA_PumpEvents;
++    device->CreateWindowFramebuffer = SDL_LUMIA_CreateWindowFramebuffer;
++    device->UpdateWindowFramebuffer = SDL_LUMIA_UpdateWindowFramebuffer;
++    device->DestroyWindowFramebuffer = SDL_LUMIA_DestroyWindowFramebuffer;
++    device->free = LUMIA_DeleteDevice;
++
++    return device;
++}
++
++VideoBootStrap LUMIA_bootstrap = {
++    LUMIAVID_DRIVER_NAME, "SDL LuminaOS framebuffer driver",
++    LUMIA_CreateDevice,
++    NULL,  /* no ShowMessageBox */
++    true   /* preferred on LuminaOS */
++};
++
++/* ---- init / quit ------------------------------------------------------- */
++static bool LUMIA_SetRelativeMouseMode(bool enabled)
++{
++    (void)enabled;
++    return true; /* relative mode unsupported; absolute mouse only */
++}
++
++bool LUMIA_VideoInit(SDL_VideoDevice *_this)
++{
++    SDL_DisplayMode mode;
++
++    (void)_this;
++
++    SDL_zero(mode);
++    mode.format = SDL_PIXELFORMAT_XRGB8888;
++    mode.w = lumia_gfx_w();
++    mode.h = lumia_gfx_h();
++    if (mode.w <= 0 || mode.h <= 0) {
++        mode.w = 1024;
++        mode.h = 768;
++    }
++    if (SDL_AddBasicVideoDisplay(&mode) == 0) {
++        return false;
++    }
++
++    SDL_GetMouse()->SetRelativeMouseMode = LUMIA_SetRelativeMouseMode;
++    return true;
++}
++
++void LUMIA_VideoQuit(SDL_VideoDevice *_this)
++{
++    (void)_this;
++}
++
++#endif /* SDL_VIDEO_DRIVER_LUMIA */
+diff --git a/src/video/lumia/SDL_lumiavideo.h b/src/video/lumia/SDL_lumiavideo.h
+new file mode 100644
+index 0000000..ad8d3ba
+--- /dev/null
++++ b/src/video/lumia/SDL_lumiavideo.h
+@@ -0,0 +1,25 @@
++/*
++  LuminaOS SDL3 video driver - internal header.
++*/
++#ifndef SDL_lumiavideo_h_
++#define SDL_lumiavideo_h_
++
++#include "../SDL_sysvideo.h"
++
++/* Property attached to an SDL_Window holding its software surface. */
++#define LUMIA_SURFACE "SDL.internal.window.surface"
++
++/* Bootstrap declared in SDL_lumiavideo.c, registered in SDL_video.c. */
++extern VideoBootStrap LUMIA_bootstrap;
++
++/* Framebuffer callbacks (SDL_lumiaframebuffer.c). */
++extern bool SDL_LUMIA_CreateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
++                                              SDL_PixelFormat *format, void **pixels, int *pitch);
++extern bool SDL_LUMIA_UpdateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
++                                              const SDL_Rect *rects, int numrects);
++extern void SDL_LUMIA_DestroyWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window);
++
++/* Event pump (SDL_lumiaevents.c). */
++extern void LUMIA_PumpEvents(SDL_VideoDevice *_this);
++
++#endif /* SDL_lumiavideo_h_ */
+diff --git a/src/video/lumia/lumia_syscall.h b/src/video/lumia/lumia_syscall.h
+new file mode 100644
+index 0000000..2b40227
+--- /dev/null
++++ b/src/video/lumia/lumia_syscall.h
+@@ -0,0 +1,111 @@
++/*
++  LuminaOS syscall wrappers for the SDL3 port.
++
++  LuminaOS user applications talk to the kernel through the int 0x80 ABI:
++    rax = syscall number, rdi/rsi/rdx/rcx = arguments, rax = return value.
++
++  The SDK (LuminaOS-SDK/include/app_libc.h) already documents these; this
++  header re-exposes them with a lumia_ prefix so they do not collide with
++  SDL's own namespace, and adds the few extra calls the port needs.
++*/
++#ifndef LUMIA_SYSCALL_H
++#define LUMIA_SYSCALL_H
++
++#include <stdint.h>
++
++#define LUMIA_SYSCALL_EXIT            0
++#define LUMIA_SYSCALL_PUTPIXEL        1
++#define LUMIA_SYSCALL_FILL_RECT       2
++#define LUMIA_SYSCALL_DRAW_RECT       3
++#define LUMIA_SYSCALL_DRAW_CHAR       4
++#define LUMIA_SYSCALL_DRAW_TEXT       5
++#define LUMIA_SYSCALL_GFX_CLEAR       6
++#define LUMIA_SYSCALL_GFX_FLUSH       7
++#define LUMIA_SYSCALL_GFX_W           8
++#define LUMIA_SYSCALL_GFX_H           9
++#define LUMIA_SYSCALL_GETCHAR         10
++#define LUMIA_SYSCALL_GETCHAR_NB      11
++#define LUMIA_SYSCALL_MOUSE_X         12
++#define LUMIA_SYSCALL_MOUSE_Y         13
++#define LUMIA_SYSCALL_MOUSE_L         14
++#define LUMIA_SYSCALL_MOUSE_R         15
++#define LUMIA_SYSCALL_MOUSE_CLICK     16
++#define LUMIA_SYSCALL_FILE_READ       17
++#define LUMIA_SYSCALL_FILE_WRITE      18
++#define LUMIA_SYSCALL_FILE_LIST       19
++#define LUMIA_SYSCALL_SLEEP           20
++#define LUMIA_SYSCALL_CURSOR          21
++#define LUMIA_SYSCALL_WIN_INFO        22
++#define LUMIA_SYSCALL_SYSINFO         23
++#define LUMIA_SYSCALL_WIN_SHOULD_CLOSE 24
++#define LUMIA_SYSCALL_OPEN_FILE       25
++#define LUMIA_SYSCALL_GET_OPEN_FILE   26
++#define LUMIA_SYSCALL_WIN_MINIMIZED   27
++#define LUMIA_SYSCALL_MINIMIZE        28
++#define LUMIA_SYSCALL_GET_TICKS       29
++#define LUMIA_SYSCALL_PIPE            30
++#define LUMIA_SYSCALL_PIPE_READ       31
++#define LUMIA_SYSCALL_PIPE_WRITE      32
++#define LUMIA_SYSCALL_CLOSE           33
++#define LUMIA_SYSCALL_SPAWN           34
++#define LUMIA_SYSCALL_GETARG          35
++#define LUMIA_SYSCALL_GETPID          36
++#define LUMIA_SYSCALL_WAIT            37
++#define LUMIA_SYSCALL_LIST_PROCS      38
++#define LUMIA_SYSCALL_YIELD           39
++
++typedef struct {
++    int win_x, win_y, win_w, win_h;
++    int client_x, client_y, client_w, client_h;
++    int close_x, close_y, close_w, close_h;
++} lumia_win_info_t;
++
++typedef struct {
++    uint32_t mem_total_kb;
++    uint32_t mem_free_kb;
++    uint32_t mem_used_kb;
++    uint32_t heap_free_kb;
++    uint32_t heap_used_kb;
++} lumia_sysinfo_t;
++
++typedef struct {
++    char name[12];
++    uint8_t attr;
++    uint8_t pad;
++    uint32_t size;
++} __attribute__((packed)) lumia_dir_entry_t;
++
++static inline long lumia_syscall5(long n, long a1, long a2, long a3, long a4)
++{
++    long r;
++    __asm__ volatile (
++        "int $0x80"
++        : "=a"(r)
++        : "a"(n), "D"(a1), "S"(a2), "d"(a3), "c"(a4)
++        : "memory");
++    return r;
++}
++
++static inline void  lumia_sys_exit(void)                        { lumia_syscall5(LUMIA_SYSCALL_EXIT, 0, 0, 0, 0); }
++static inline void  lumia_gfx_putpixel(int x, int y, uint32_t c){ lumia_syscall5(LUMIA_SYSCALL_PUTPIXEL, x, y, (long)c, 0); }
++static inline void  lumia_gfx_fill_rect(int x, int y, int w, int h, uint32_t c) { lumia_syscall5(LUMIA_SYSCALL_FILL_RECT, x, y, w | ((long)h << 16), (long)c); }
++static inline void  lumia_gfx_draw_text(int x, int y, const char *s, uint32_t c) { lumia_syscall5(LUMIA_SYSCALL_DRAW_TEXT, x, y, (long)s, (long)c); }
++static inline void  lumia_gfx_clear(uint32_t c)                 { lumia_syscall5(LUMIA_SYSCALL_GFX_CLEAR, (long)c, 0, 0, 0); }
++static inline void  lumia_gfx_flush(void)                       { lumia_syscall5(LUMIA_SYSCALL_GFX_FLUSH, 0, 0, 0, 0); }
++static inline int   lumia_gfx_w(void)                           { return (int)lumia_syscall5(LUMIA_SYSCALL_GFX_W, 0, 0, 0,0); }
++static inline int   lumia_gfx_h(void)                           { return (int)lumia_syscall5(LUMIA_SYSCALL_GFX_H, 0, 0, 0,0); }
++static inline int   lumia_getchar_nb(void)                      { return (int)lumia_syscall5(LUMIA_SYSCALL_GETCHAR_NB, 0, 0, 0,0); }
++static inline int   lumia_mouse_x(void)                         { return (int)lumia_syscall5(LUMIA_SYSCALL_MOUSE_X, 0, 0, 0,0); }
++static inline int   lumia_mouse_y(void)                         { return (int)lumia_syscall5(LUMIA_SYSCALL_MOUSE_Y, 0, 0, 0,0); }
++static inline int   lumia_mouse_left(void)                      { return (int)lumia_syscall5(LUMIA_SYSCALL_MOUSE_L, 0, 0, 0,0); }
++static inline int   lumia_mouse_right(void)                     { return (int)lumia_syscall5(LUMIA_SYSCALL_MOUSE_R, 0, 0, 0,0); }
++static inline int   lumia_mouse_click(void)                     { return (int)lumia_syscall5(LUMIA_SYSCALL_MOUSE_CLICK, 0, 0, 0,0); }
++static inline int   lumia_file_read(const char *p, void *b, int n)  { return (int)lumia_syscall5(LUMIA_SYSCALL_FILE_READ, (long)p, (long)b, n, 0); }
++static inline int   lumia_file_write(const char *p, const void *b, int n) { return (int)lumia_syscall5(LUMIA_SYSCALL_FILE_WRITE, (long)p, (long)b, n, 0); }
++static inline int   lumia_file_list(void *buf, int n)           { return (int)lumia_syscall5(LUMIA_SYSCALL_FILE_LIST, (long)buf, 0, n, 0); }
++static inline void  lumia_sys_sleep(int ms)                     { lumia_syscall5(LUMIA_SYSCALL_SLEEP, ms, 0, 0, 0); }
++static inline uint32_t lumia_get_ticks(void)                    { return (uint32_t)lumia_syscall5(LUMIA_SYSCALL_GET_TICKS, 0, 0, 0, 0); }
++static inline void  lumia_sys_win_info(lumia_win_info_t *info)  { lumia_syscall5(LUMIA_SYSCALL_WIN_INFO, (long)info, 0, 0, 0); }
++static inline int   lumia_sys_win_should_close(void)            { return (int)lumia_syscall5(LUMIA_SYSCALL_WIN_SHOULD_CLOSE, 0, 0, 0,0); }
++
++#endif /* LUMIA_SYSCALL_H */

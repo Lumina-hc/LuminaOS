@@ -13,6 +13,32 @@ OUT="$ROOT/ports/sdl3/lib"
 
 mkdir -p "$OUT" "$BUILD"
 
+# The LUMIA platform port is stored as a patch against upstream SDL (fda4ece)
+# rather than a fork, so that "git submodule update --init" plus this script
+# reproduces the full port from a clean clone. Apply it idempotently: a
+# successful reverse-check means the patch is already in the working tree.
+# To refresh after editing SDL directly:
+#   git -C third_party/SDL add -A
+#   git -C third_party/SDL diff --cached --binary > ports/sdl3/patches/0001-lumia-port.patch
+#   git -C third_party/SDL reset
+LUMIA_PATCH="$ROOT/ports/sdl3/patches/0001-lumia-port.patch"
+if [[ ! -f "$SDL/CMakeLists.txt" ]]; then
+    echo "SDL submodule is not initialized. Run:" >&2
+    echo "  git submodule update --init third_party/SDL" >&2
+    exit 1
+fi
+if [[ -f "$LUMIA_PATCH" ]]; then
+    if ! git -C "$SDL" apply --check --reverse "$LUMIA_PATCH" >/dev/null 2>&1; then
+        echo "=== Applying SDL3 LUMIA port patch ==="
+        git -C "$SDL" apply "$LUMIA_PATCH" || {
+            echo "Failed to apply $LUMIA_PATCH." >&2
+            echo "Ensure third_party/SDL is at fda4ece with no conflicting edits." >&2
+            exit 1
+        }
+        echo "=== SDL3 LUMIA port patch applied ==="
+    fi
+fi
+
 echo "=== Configuring SDL3 for LuminaOS ==="
 cmake -S "$SDL" -B "$BUILD" -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE="$ROOT/cmake/lumia-toolchain.cmake" \

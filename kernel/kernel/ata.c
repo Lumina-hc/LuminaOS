@@ -1,6 +1,10 @@
-#include <"../include/kernel/ata.h">
+#ifndef ATA_C
+#define ATA_C
+
+#include <kernel/ata.h>
 #include <kernel/io.h>
 #include <stdint.h>
+
 #define ATA_DATA        0x1F0
 #define ATA_SECTOR_CNT  0x1F2
 #define ATA_LBA_LO      0x1F3
@@ -63,3 +67,5 @@ int ata_write_sector(uint32_t lba, const void* buffer)
     }
     return -1;
 }
+
+#endif /* ATA_C */
