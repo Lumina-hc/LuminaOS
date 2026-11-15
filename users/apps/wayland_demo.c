@@ -264,7 +264,6 @@ static void handle_event(const uint8_t* m, uint32_t size)
         if (button == 0x110)
             ptr_down = (state == 1);
     } else if (id == ID_KEYBOARD && op == 0) {
-        /* wl_keyboard.keymap: format, fd, size — map the XKB keymap. */
         (void)wl_arg_u32(&a);
         uint32_t fd = wl_arg_u32(&a);
         (void)wl_arg_u32(&a);

@@ -28,7 +28,6 @@
 #define USER_STACK_TOP 0x7FF00000
 #define USER_STACK_PAGES 16
 
-/* Modern palette */
 #define COL_WALL_TOP 0x14213D
 #define COL_WALL_MID 0x22355A
 #define COL_WALL_BOT 0x0E1A30
@@ -70,13 +69,12 @@ static const desktop_icon_t icons[] = {
 };
 #define ICON_COUNT ((int)(sizeof(icons) / sizeof(icons[0])))
 
-/* Minimized (suspended) applications shown as taskbar pills. */
 #define MAX_MIN 6
 #define MAX_PILLS 8
 
 typedef struct {
     int x, y, w, h;
-    int action;        /* 0 none, 1 launch terminal, 2 restore app */
+    int action;
     proc_t* proc;
 } dt_pill_t;
 
@@ -400,13 +398,10 @@ static void dt_draw_icon(int idx, int hover)
         fill_round_rect(x - 8, y - 8, ICON_W + 16, ICON_H + ICON_LABEL_H + 16, 10, 0x2A3550);
     }
 
-    /* tile */
     fill_round_rect(x, y, ICON_W, ICON_H, 14, ic->color);
-    /* top gloss */
     fill_round_rect(x + 4, y + 4, ICON_W - 8, ICON_H / 2 - 4, 10, 0xFFFFFF & 0x00303030);
     gfx_fill_rect(x + 6, y + 5, ICON_W - 12, 2, 0x60FFFFFF);
 
-    /* inner glyph block */
     gfx_fill_rect(x + 14, y + 16, ICON_W - 28, ICON_H - 32, 0xE0FFFFFF);
     gfx_fill_rect(x + 20, y + 24, ICON_W - 40, 3, ic->color);
     gfx_fill_rect(x + 20, y + 31, ICON_W - 40, 3, ic->color);
@@ -464,13 +459,11 @@ static void dt_draw_taskbar(const char* user)
     gfx_fill_rect(0, ty, W, TASKBAR_H, COL_TASKBAR);
     gfx_fill_rect(0, ty, W, 2, COL_ACCENT);
 
-    /* start button */
     fill_round_rect(10, ty + 7, 150, TASKBAR_H - 14, 9, COL_TASKBAR2);
     gfx_fill_rect(22, ty + 14, 14, 14, COL_ACCENT);
     gfx_fill_rect(24, ty + 16, 10, 10, COL_TASKBAR2);
     gfx_draw_text(46, ty + 14, "Lumina", COL_TEXT, GFX_TRANSPARENT);
 
-    /* app pills: terminal launcher + minimized windows */
     g_pill_count = 0;
     int px = 180;
 
@@ -508,7 +501,6 @@ static void dt_draw_taskbar(const char* user)
         px += w + 8;
     }
 
-    /* user */
     char ubuf[40];
     int n = 0;
     const char* pre = "User: ";
@@ -519,7 +511,6 @@ static void dt_draw_taskbar(const char* user)
 
     int uw = gfx_text_width(ubuf);
 
-    /* clock */
     int hh, mm, ss;
     rtc_time(&hh, &mm, &ss);
     char clk[8];
@@ -823,9 +814,7 @@ static int dt_evdev(int sc, int ext)
 {
     int code = sc & 0x7F;
     if (!ext) {
-        /* 1..0x3D: ESC..slash, 0x40..0x44: F6..F10,
-         * 0x45/0x46: numlock/scrolllock, 0x47..0x53: keypad 7..dot.
-         * Wayland uses evdev keycodes directly. */
+
         if (code >= 1 && code <= 0x53)
             return code;
         return 0;

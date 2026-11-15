@@ -39,11 +39,8 @@
 #define WL_BTN_RIGHT 0x111
 #define WL_BTN_MIDDLE 0x112
 
-/* Pseudo-fd handle used to hand the built-in XKB keymap to clients.
- * Real shm pool handles are 1..WL_MAX_POOLS, so 100 never collides. */
 #define WL_KEYMAP_FD 100
-/* Fixed user-space VA where the read-only keymap pages are mapped. The
- * shm pool slots end at 0x30000000 + WL_MAX_POOLS * 0x01000000. */
+
 #define WL_KEYMAP_BASE 0x38000000ULL
 
 typedef struct {
@@ -136,11 +133,6 @@ static wl_buffer_t bufs[WL_MAX_BUFFERS];
 static wl_pool_t pools[WL_MAX_POOLS];
 static int g_kb_focus;
 
-/* Self-contained US keymap for libxkbcommon (SDL3 and other standard
- * Wayland clients call xkb_keymap_new_from_string on the buffer behind
- * the wl_keyboard.keymap fd). Keycodes follow the evdev convention used
- * on the wire: xkb keycode = evdev keycode + 8. No `include` directives,
- * so no XKB data files are needed on the OS. */
 static const char wl_keymap_text[] =
     "xkb_keymap {\n"
     "xkb_keycodes {\n"
@@ -837,8 +829,6 @@ static void send_keyboard_repeat(wl_client_t* c, int obj)
     msg_end(c, off);
 }
 
-/* wl_keyboard.keymap: format 1 = XKB_V1. The fd is the pseudo handle the
- * client passes to wl_shm_map to get a read-only view of the keymap. */
 static void send_keyboard_keymap(wl_client_t* c, int obj)
 {
     if (!km_phys)
