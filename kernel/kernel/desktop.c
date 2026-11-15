@@ -10,6 +10,7 @@
 #include <kernel/gdt.h>
 #include <kernel/io.h>
 #include <kernel/sched.h>
+#include <kernel/wayland.h>
 #include <kernel/tty.h>
 #include <stdint.h>
 
@@ -27,7 +28,6 @@
 #define USER_STACK_TOP 0x7FF00000
 #define USER_STACK_PAGES 16
 
-/* Modern palette */
 #define COL_WALL_TOP 0x14213D
 #define COL_WALL_MID 0x22355A
 #define COL_WALL_BOT 0x0E1A30
@@ -69,13 +69,12 @@ static const desktop_icon_t icons[] = {
 };
 #define ICON_COUNT ((int)(sizeof(icons) / sizeof(icons[0])))
 
-/* Minimized (suspended) applications shown as taskbar pills. */
 #define MAX_MIN 6
 #define MAX_PILLS 8
 
 typedef struct {
     int x, y, w, h;
-    int action;        /* 0 none, 1 launch terminal, 2 restore app */
+    int action;
     proc_t* proc;
 } dt_pill_t;
 
@@ -87,6 +86,12 @@ static int g_min_count = 0;
 static const char* g_user = "guest";
 static proc_t* g_foreground = 0;
 static int g_hover_icon = -1;
+static int g_wl_press_sid;
+static int g_wl_press_down;
+static int g_wl_hover_sid;
+static int g_wl_kb_sid;
+static int g_wl_mods;
+static int g_wl_ext_pending;
 
 #define DT_MAX_WIN 4
 
@@ -95,6 +100,10 @@ typedef struct {
     int x, y, w, h;
     uint32_t* surf;
     int sw, sh;
+    int stride;
+    int wl_sid;
+    int wl_client;
+    char wl_title[WL_MAX_TITLE];
 } dt_win_t;
 
 static dt_win_t g_wins[DT_MAX_WIN];
@@ -172,6 +181,8 @@ static void dt_run_app(const char* title, const char* path, const char* user);
 static void dt_resume_app(proc_t* proc);
 static void dt_close_proc(proc_t* proc);
 static void dt_draw_window_frame(const dt_win_t* w, const char* title, int focused, int with_body);
+static void dt_dbg_hex(uint64_t v);
+static void dt_num_dec(uint64_t v);
 
 proc_t* desktop_foreground(void)
 {
@@ -243,6 +254,10 @@ static dt_win_t* dt_win_alloc(proc_t* p)
             g_wins[i].surf = g_surf[i];
             g_wins[i].sw = g_surf_w[i];
             g_wins[i].sh = g_surf_h[i];
+            g_wins[i].stride = 0;
+            g_wins[i].wl_sid = 0;
+            g_wins[i].wl_client = 0;
+            g_wins[i].wl_title[0] = '\0';
             return &g_wins[i];
         }
     }
@@ -254,7 +269,16 @@ static void dt_win_release(proc_t* p, int* rx, int* ry, int* rw, int* rh)
     for (int i = 0; i < DT_MAX_WIN; i++) {
         if (g_wins[i].proc == p) {
             if (rx) { *rx = g_wins[i].x; *ry = g_wins[i].y; *rw = g_wins[i].w; *rh = g_wins[i].h; }
+            if (g_wl_press_sid == g_wins[i].wl_sid)
+                g_wl_press_sid = 0;
+            if (g_wl_hover_sid == g_wins[i].wl_sid)
+                g_wl_hover_sid = 0;
+            if (g_wl_kb_sid == g_wins[i].wl_sid)
+                g_wl_kb_sid = 0;
             g_wins[i].proc = 0;
+            g_wins[i].wl_sid = 0;
+            g_wins[i].wl_client = 0;
+            g_wins[i].wl_title[0] = '\0';
             return;
         }
     }
@@ -374,13 +398,10 @@ static void dt_draw_icon(int idx, int hover)
         fill_round_rect(x - 8, y - 8, ICON_W + 16, ICON_H + ICON_LABEL_H + 16, 10, 0x2A3550);
     }
 
-    /* tile */
     fill_round_rect(x, y, ICON_W, ICON_H, 14, ic->color);
-    /* top gloss */
     fill_round_rect(x + 4, y + 4, ICON_W - 8, ICON_H / 2 - 4, 10, 0xFFFFFF & 0x00303030);
     gfx_fill_rect(x + 6, y + 5, ICON_W - 12, 2, 0x60FFFFFF);
 
-    /* inner glyph block */
     gfx_fill_rect(x + 14, y + 16, ICON_W - 28, ICON_H - 32, 0xE0FFFFFF);
     gfx_fill_rect(x + 20, y + 24, ICON_W - 40, 3, ic->color);
     gfx_fill_rect(x + 20, y + 31, ICON_W - 40, 3, ic->color);
@@ -438,13 +459,11 @@ static void dt_draw_taskbar(const char* user)
     gfx_fill_rect(0, ty, W, TASKBAR_H, COL_TASKBAR);
     gfx_fill_rect(0, ty, W, 2, COL_ACCENT);
 
-    /* start button */
     fill_round_rect(10, ty + 7, 150, TASKBAR_H - 14, 9, COL_TASKBAR2);
     gfx_fill_rect(22, ty + 14, 14, 14, COL_ACCENT);
     gfx_fill_rect(24, ty + 16, 10, 10, COL_TASKBAR2);
     gfx_draw_text(46, ty + 14, "Lumina", COL_TEXT, GFX_TRANSPARENT);
 
-    /* app pills: terminal launcher + minimized windows */
     g_pill_count = 0;
     int px = 180;
 
@@ -482,7 +501,6 @@ static void dt_draw_taskbar(const char* user)
         px += w + 8;
     }
 
-    /* user */
     char ubuf[40];
     int n = 0;
     const char* pre = "User: ";
@@ -493,7 +511,6 @@ static void dt_draw_taskbar(const char* user)
 
     int uw = gfx_text_width(ubuf);
 
-    /* clock */
     int hh, mm, ss;
     rtc_time(&hh, &mm, &ss);
     char clk[8];
@@ -556,13 +573,26 @@ static void dt_flush_rect(int x, int y, int w, int h)
     gfx_flush_rect(x, y, w, h);
 }
 
+static const char* dt_win_title(const dt_win_t* w)
+{
+    if (w->wl_title[0])
+        return w->wl_title;
+    return w->proc ? w->proc->name : "";
+}
+
+static void dt_blit_surface(const uint32_t* src, int stride, int sw, int sh,
+                            int dx, int dy, int rx, int ry, int rw, int rh)
+{
+    gfx_blit_to_back_stride(src, stride, sw, sh, dx, dy, rx, ry, rw, rh);
+}
+
 static void dt_draw_window_content(const dt_win_t* w, int rx, int ry, int rw, int rh)
 {
-    dt_draw_window_frame(w, w->proc->name, w->proc == g_foreground, 0);
+    dt_draw_window_frame(w, dt_win_title(w), w->proc == g_foreground, 0);
     int cx, cy, cw, ch;
     dt_win_client(w, &cx, &cy, &cw, &ch);
     if (w->surf)
-        gfx_blit_to_back(w->surf, w->sw, w->sh, cx, cy, rx, ry, rw, rh);
+        dt_blit_surface(w->surf, w->stride, w->sw, w->sh, cx, cy, rx, ry, rw, rh);
     else
         gfx_fill_rect(cx, cy, cw, ch, 0x101418);
 }
@@ -625,8 +655,8 @@ static void dt_show_window(dt_win_t* w, const char* title)
     gfx_begin();
     dt_draw_wallpaper_rect(w->x - 2, w->y - 2, w->w + 4, w->h + 4);
     dt_draw_window_frame(w, title, 1, 1);
-    if (w->surf && w->sw == cw && w->sh == ch)
-        gfx_blit_to_back(w->surf, w->sw, w->sh, cx, cy, w->x - 2, w->y - 2, w->w + 4, w->h + 4);
+    if (w->surf)
+        gfx_blit_to_back_stride(w->surf, w->stride, w->sw, w->sh, cx, cy, w->x - 2, w->y - 2, w->w + 4, w->h + 4);
     else
         gfx_fill_rect(cx, cy, cw, ch, 0x101418);
     dt_flush_rect(w->x - 2, w->y - 2, w->w + 4, w->h + 4);
@@ -751,6 +781,7 @@ static void dt_close_proc(proc_t* proc)
     int rx = 0, ry = 0, rw = 0, rh = 0;
     dt_remove_min(proc);
     dt_win_release(proc, &rx, &ry, &rw, &rh);
+    wl_release_pid(proc->pid);
     if (g_foreground == proc)
         g_foreground = dt_pick_focus();
     mouse_click_consume();
@@ -777,7 +808,122 @@ static void dt_finish_proc(proc_t* proc)
     }
 }
 
-static void dt_dbg_hex(uint64_t v);
+static void dt_wl_tick(void);
+
+static int dt_evdev(int sc, int ext)
+{
+    int code = sc & 0x7F;
+    if (!ext) {
+
+        if (code >= 1 && code <= 0x53)
+            return code;
+        return 0;
+    }
+    switch (code) {
+    case 0x1D: return 97;
+    case 0x38: return 100;
+    case 0x47: return 102;
+    case 0x48: return 103;
+    case 0x49: return 104;
+    case 0x4B: return 105;
+    case 0x4D: return 106;
+    case 0x4F: return 107;
+    case 0x50: return 108;
+    case 0x51: return 109;
+    case 0x52: return 110;
+    case 0x53: return 111;
+    case 0x5B: return 125;
+    case 0x5C: return 126;
+    default: return 0;
+    }
+}
+
+static dt_win_t* dt_win_by_wl(int sid)
+{
+    for (int i = 0; i < DT_MAX_WIN; i++)
+        if (g_wins[i].proc && g_wins[i].wl_sid == sid)
+            return &g_wins[i];
+    return 0;
+}
+
+static dt_win_t* dt_wl_win_at(int x, int y)
+{
+    dt_win_t* w = dt_win_at(x, y);
+    if (!w || !w->wl_sid)
+        return 0;
+    int cx, cy, cw, ch;
+    dt_win_client(w, &cx, &cy, &cw, &ch);
+    if (x < cx || x >= cx + cw || y < cy || y >= cy + ch)
+        return 0;
+    return w;
+}
+
+static void dt_wl_tick(void)
+{
+    int sid = 0;
+    wl_surface_info_t si;
+    while ((sid = wl_next_surface(sid, &si)) != 0) {
+        proc_t* p = proc_from_pid(si.pid);
+        if (!p)
+            continue;
+        dt_win_t* w = dt_win_of(p);
+        if (!w) {
+            if (!dt_win_has_free())
+                continue;
+            w = dt_win_alloc(p);
+            if (!w)
+                continue;
+        }
+
+        if (!si.is_new && !si.dirty)
+            continue;
+
+        int resized = si.mapped && (w->sw != si.w || w->sh != si.h);
+        int ox = w->x, oy = w->y, ow = w->w, oh = w->h;
+
+        w->wl_sid = si.id;
+        w->wl_client = si.client_id;
+
+        int n = 0;
+        while (si.title[n] && n < WL_MAX_TITLE - 1) {
+            w->wl_title[n] = si.title[n];
+            n++;
+        }
+        w->wl_title[n] = '\0';
+
+        if (si.mapped && si.pixels) {
+            w->surf = si.pixels;
+            w->sw = si.w;
+            w->sh = si.h;
+            w->stride = si.stride;
+        } else {
+            w->surf = 0;
+            w->sw = 0;
+            w->sh = 0;
+            w->stride = 0;
+        }
+
+        if (si.is_new || resized) {
+            if (si.mapped && si.w > 0 && si.h > 0) {
+                w->w = si.w + 2;
+                w->h = si.h + 42;
+                if (w->w > scr_w()) w->w = scr_w();
+                if (w->h > scr_h() - TASKBAR_H) w->h = scr_h() - TASKBAR_H;
+                if (w->x + w->w > scr_w()) w->x = scr_w() - w->w;
+                if (w->y + w->h > scr_h() - TASKBAR_H) w->y = scr_h() - TASKBAR_H - w->h;
+                if (w->x < 0) w->x = 0;
+                if (w->y < 0) w->y = 0;
+            }
+            if (resized && (ow != w->w || oh != w->h))
+                dt_repaint_rect(ox - 2, oy - 2, ow + 4, oh + 4);
+            dt_show_window(w, dt_win_title(w));
+        } else {
+            dt_repaint_rect(w->x - 2, w->y - 2, w->w + 4, w->h + 4);
+        }
+
+        wl_surface_presented(si.id);
+    }
+}
 
 static void dt_num_dec(uint64_t v)
 {
@@ -1033,6 +1179,8 @@ int desktop_run(int fs_ready, const char* user)
             dt_paint_full();
         }
 
+        dt_wl_tick();
+
         if (!g_foreground && keyboard_peek() == '\033') {
             keyboard_getchar_nonblock();
             return 0;
@@ -1050,6 +1198,19 @@ int desktop_run(int fs_ready, const char* user)
         int moved = (mx != prev_x || my != prev_y);
         prev_x = mx;
         prev_y = my;
+
+        if (moved) {
+            dt_win_t* cw = dt_wl_win_at(mx, my);
+            if (cw) {
+                if (g_wl_hover_sid && g_wl_hover_sid != cw->wl_sid)
+                    wl_input_leave(g_wl_hover_sid);
+                wl_input_motion(cw->wl_sid, mx - cw->x - 1, my - cw->y - 41);
+                g_wl_hover_sid = cw->wl_sid;
+            } else if (g_wl_hover_sid) {
+                wl_input_leave(g_wl_hover_sid);
+                g_wl_hover_sid = 0;
+            }
+        }
 
         if (!g_foreground && hover != last_hover) {
             int old = last_hover;
@@ -1099,6 +1260,15 @@ int desktop_run(int fs_ready, const char* user)
             }
         }
 
+        if (g_wl_press_down && !mouse_left() && g_wl_press_sid) {
+            dt_win_t* cw = dt_win_by_wl(g_wl_press_sid);
+            if (cw)
+                wl_input_button(g_wl_press_sid, 0x110, 0,
+                                mx - cw->x - 1, my - cw->y - 41);
+            g_wl_press_sid = 0;
+        }
+        g_wl_press_down = mouse_left();
+
         if (mouse_click_peek() && mouse_left() && !g_drag) {
             dt_win_t* hit = dt_win_at(mx, my);
             if (hit) {
@@ -1106,7 +1276,10 @@ int desktop_run(int fs_ready, const char* user)
                 int by = hit->y + 12;
                 if (dt_point_in(mx, my, bx + 22, by - 4, 24, 24)) {
                     mouse_click_consume();
-                    dt_close_proc(hit->proc);
+                    if (hit->wl_sid)
+                        wl_input_close(hit->wl_sid);
+                    else
+                        dt_close_proc(hit->proc);
                 } else if (dt_point_in(mx, my, bx - 4, by - 4, 24, 24)) {
                     mouse_click_consume();
                     dt_suspend_proc(hit->proc);
@@ -1119,6 +1292,12 @@ int desktop_run(int fs_ready, const char* user)
                 } else if (hit->proc != g_foreground) {
                     mouse_click_consume();
                     dt_focus(hit->proc);
+                }
+                dt_win_t* cw = dt_wl_win_at(mx, my);
+                if (cw) {
+                    wl_input_button(cw->wl_sid, 0x110, 1,
+                                    mx - cw->x - 1, my - cw->y - 41);
+                    g_wl_press_sid = cw->wl_sid;
                 }
             } else if (mouse_click_consume()) {
                 int handled = 0;
@@ -1159,6 +1338,49 @@ int desktop_run(int fs_ready, const char* user)
                     }
                 }
             }
+        }
+
+        dt_win_t* fw = g_foreground ? dt_win_of(g_foreground) : 0;
+        int fsid = (fw && fw->wl_sid) ? fw->wl_sid : 0;
+        wl_input_keyboard_focus(fsid);
+        if (fsid != g_wl_kb_sid) {
+            keyboard_scancode_flush();
+            g_wl_ext_pending = 0;
+            g_wl_mods = 0;
+            g_wl_kb_sid = fsid;
+        }
+        if (fsid) {
+            int sc;
+            while ((sc = keyboard_scancode_nonblock()) >= 0) {
+                int ext = 0;
+                if (g_wl_ext_pending) {
+                    ext = 1;
+                    g_wl_ext_pending = 0;
+                } else if (sc == 0xE0) {
+                    g_wl_ext_pending = 1;
+                    continue;
+                }
+                int code = dt_evdev(sc, ext);
+                if (!code)
+                    continue;
+                int down = !(sc & 0x80);
+                if (code == 42 || code == 54) {
+                    if (down) g_wl_mods |= 1; else g_wl_mods &= ~1;
+                } else if (code == 29 || code == 97) {
+                    if (down) g_wl_mods |= 4; else g_wl_mods &= ~4;
+                } else if (code == 56 || code == 100) {
+                    if (down) g_wl_mods |= 8; else g_wl_mods &= ~8;
+                } else if (code == 125 || code == 126) {
+                    if (down) g_wl_mods |= 64; else g_wl_mods &= ~64;
+                }
+                wl_input_key(fsid, code, down, (uint32_t)g_wl_mods);
+            }
+            while (keyboard_getchar_nonblock() >= 0) {
+            }
+        } else {
+            while (keyboard_scancode_nonblock() >= 0) {
+            }
+            g_wl_ext_pending = 0;
         }
 
         if (moved)

@@ -46,7 +46,7 @@ int elf_load(const char* path, uint64_t* entry_out, uint64_t* brk_out)
     /* Contiguous physical run: buf_vaddr is used directly as a virtual
        address (physical RAM is identity-mapped), so the whole file must be
        readable as one linear buffer. */
-    uint64_t buf_vaddr = pmm_alloc_contiguous(buf_pages);
+    uint64_t buf_vaddr = pmm_alloc_contig(buf_pages);
     if (!buf_vaddr) return -1;
 
     uint32_t got = 0;

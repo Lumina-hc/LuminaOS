@@ -12,6 +12,7 @@
 #include <kernel/isr.h>
 #include <kernel/proc.h>
 #include <kernel/pipe.h>
+#include <kernel/wayland.h>
 #include <kernel/tty.h>
 #include <stdint.h>
 
@@ -424,6 +425,51 @@ static long sc_cursor(long a, long b, long c, long d)
     return 0;
 }
 
+static long sc_wl_connect(long a, long b, long c, long d)
+{
+    (void)a; (void)b; (void)c; (void)d;
+    proc_t* p = proc_current();
+    if (!p) return -1;
+    return wl_connect(p->pid);
+}
+
+static long sc_wl_send(long cid, long buf, long len, long d)
+{
+    (void)d;
+    return wl_send((int)cid, (const void*)buf, (uint32_t)len);
+}
+
+static long sc_wl_recv(long cid, long buf, long len, long d)
+{
+    (void)d;
+    return wl_recv((int)cid, (void*)buf, (uint32_t)len);
+}
+
+static long sc_wl_send_fd(long cid, long fd, long b, long c)
+{
+    (void)b; (void)c;
+    return wl_send_fd((int)cid, (int)fd);
+}
+
+static long sc_wl_shm_alloc(long cid, long size, long b, long c)
+{
+    (void)b; (void)c;
+    return wl_shm_alloc((int)cid, (uint32_t)size);
+}
+
+static long sc_wl_shm_map(long cid, long fd, long b, long c)
+{
+    (void)b; (void)c;
+    return (long)wl_shm_map((int)cid, (int)fd);
+}
+
+static long sc_wl_disconnect(long cid, long b, long c, long d)
+{
+    (void)b; (void)c; (void)d;
+    wl_disconnect((int)cid);
+    return 0;
+}
+
 typedef long (*sc_fn_t)(long, long, long, long);
 
 static const sc_fn_t syscall_table[SYSCALL_COUNT] = {
@@ -466,6 +512,13 @@ static const sc_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYSCALL_WAIT]           = sc_wait,
     [SYSCALL_LIST_PROCS]     = sc_list_procs,
     [SYSCALL_YIELD]          = sc_yield,
+    [SYSCALL_WL_CONNECT]     = sc_wl_connect,
+    [SYSCALL_WL_SEND]        = sc_wl_send,
+    [SYSCALL_WL_RECV]        = sc_wl_recv,
+    [SYSCALL_WL_SEND_FD]     = sc_wl_send_fd,
+    [SYSCALL_WL_SHM_ALLOC]   = sc_wl_shm_alloc,
+    [SYSCALL_WL_SHM_MAP]     = sc_wl_shm_map,
+    [SYSCALL_WL_DISCONNECT]  = sc_wl_disconnect,
 };
 
 void syscall_init(void)

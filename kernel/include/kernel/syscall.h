@@ -33,7 +33,6 @@
 #define SYSCALL_WIN_MINIMIZED   27
 #define SYSCALL_MINIMIZE        28
 #define SYSCALL_GET_TICKS       29
-#define SYSCALL_COUNT           40
 #define SYSCALL_PIPE            30
 #define SYSCALL_PIPE_READ       31
 #define SYSCALL_PIPE_WRITE      32
@@ -44,6 +43,14 @@
 #define SYSCALL_WAIT            37
 #define SYSCALL_LIST_PROCS      38
 #define SYSCALL_YIELD           39
+#define SYSCALL_WL_CONNECT      40
+#define SYSCALL_WL_SEND         41
+#define SYSCALL_WL_RECV         42
+#define SYSCALL_WL_SEND_FD      43
+#define SYSCALL_WL_SHM_ALLOC    44
+#define SYSCALL_WL_SHM_MAP      45
+#define SYSCALL_WL_DISCONNECT   46
+#define SYSCALL_COUNT           47
 
 typedef struct {
     uint32_t mem_total_kb;

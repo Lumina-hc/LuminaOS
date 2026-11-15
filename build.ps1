@@ -47,6 +47,7 @@ $C_FILES = @(
     "kernel\kernel\proc.c",
     "kernel\kernel\pipe.c",
     "kernel\kernel\syscall.c",
+    "kernel\kernel\wayland.c",
     "users\services\render.c",
     "users\services\password_services.c",
     "kernel\arch\x86_64\gdt.c",

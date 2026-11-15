@@ -199,7 +199,14 @@ void gfx_set_window_surface(uint32_t* buf, int w, int h)
 void gfx_blit_to_back(const uint32_t* src, int sw, int sh, int dx, int dy,
                       int cx, int cy, int cw, int ch)
 {
+    gfx_blit_to_back_stride(src, sw, sw, sh, dx, dy, cx, cy, cw, ch);
+}
+
+void gfx_blit_to_back_stride(const uint32_t* src, int stride, int sw, int sh,
+                             int dx, int dy, int cx, int cy, int cw, int ch)
+{
     if (!src || !back) return;
+    if (stride <= 0) stride = sw;
     if (cx < 0) { cw += cx; cx = 0; }
     if (cy < 0) { ch += cy; cy = 0; }
     if (cx + cw > gfx_w) cw = gfx_w - cx;
@@ -213,7 +220,7 @@ void gfx_blit_to_back(const uint32_t* src, int sw, int sh, int dx, int dy,
     if (x1 <= x0 || y1 <= y0) return;
 
     for (int y = y0; y < y1; y++) {
-        const uint32_t* s = src + (y - dy) * sw + (x0 - dx);
+        const uint32_t* s = src + (y - dy) * stride + (x0 - dx);
         uint32_t* d = back + y * gfx_stride + x0;
         for (int x = 0; x < x1 - x0; x++)
             d[x] = s[x];
