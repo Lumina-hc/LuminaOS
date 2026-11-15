@@ -38,6 +38,7 @@ static int ptr_x = W / 2;
 static int ptr_y = H / 2;
 static int ptr_down;
 static int last_key = -1;
+static void* keymap_ptr;
 static uint32_t ticks;
 static int sq_x[3] = { 60, 210, 360 };
 static int sq_y[3] = { 60, 170, 100 };
@@ -146,6 +147,9 @@ static void draw_frame(uint32_t* p)
             fill_rect(p, 16 + i * 22, H - 30, 18, 18, c);
         }
     }
+
+    if (keymap_ptr)
+        fill_rect(p, W - 14, 8, 6, 6, 0x39C48B);
 }
 
 static void send_get_registry(void)
@@ -259,6 +263,12 @@ static void handle_event(const uint8_t* m, uint32_t size)
         uint32_t state = wl_arg_u32(&a);
         if (button == 0x110)
             ptr_down = (state == 1);
+    } else if (id == ID_KEYBOARD && op == 0) {
+        /* wl_keyboard.keymap: format, fd, size — map the XKB keymap. */
+        (void)wl_arg_u32(&a);
+        uint32_t fd = wl_arg_u32(&a);
+        (void)wl_arg_u32(&a);
+        keymap_ptr = wl_shm_map(&conn, (int)fd);
     } else if (id == ID_KEYBOARD && op == 3) {
         (void)wl_arg_u32(&a);
         (void)wl_arg_u32(&a);

@@ -823,7 +823,10 @@ static int dt_evdev(int sc, int ext)
 {
     int code = sc & 0x7F;
     if (!ext) {
-        if (code >= 1 && code <= 0x3F)
+        /* 1..0x3D: ESC..slash, 0x40..0x44: F6..F10,
+         * 0x45/0x46: numlock/scrolllock, 0x47..0x53: keypad 7..dot.
+         * Wayland uses evdev keycodes directly. */
+        if (code >= 1 && code <= 0x53)
             return code;
         return 0;
     }

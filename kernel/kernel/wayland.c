@@ -3,6 +3,7 @@
 #include <kernel/paging.h>
 #include <kernel/proc.h>
 #include <kernel/timer.h>
+#include <kernel/io.h>
 #include <stdint.h>
 
 #define WL_OBJ_NONE 0
@@ -37,6 +38,13 @@
 #define WL_BTN_LEFT 0x110
 #define WL_BTN_RIGHT 0x111
 #define WL_BTN_MIDDLE 0x112
+
+/* Pseudo-fd handle used to hand the built-in XKB keymap to clients.
+ * Real shm pool handles are 1..WL_MAX_POOLS, so 100 never collides. */
+#define WL_KEYMAP_FD 100
+/* Fixed user-space VA where the read-only keymap pages are mapped. The
+ * shm pool slots end at 0x30000000 + WL_MAX_POOLS * 0x01000000. */
+#define WL_KEYMAP_BASE 0x38000000ULL
 
 typedef struct {
     uint8_t type;
@@ -117,6 +125,7 @@ typedef struct {
     int pending_fd_count;
     int pointer_obj;
     int keyboard_obj;
+    int km_mapped;
     uint32_t last_mods;
     wl_object_t obj[WL_MAX_OBJECTS];
 } wl_client_t;
@@ -126,6 +135,193 @@ static wl_surface_t surfs[WL_MAX_SURFACES];
 static wl_buffer_t bufs[WL_MAX_BUFFERS];
 static wl_pool_t pools[WL_MAX_POOLS];
 static int g_kb_focus;
+
+/* Self-contained US keymap for libxkbcommon (SDL3 and other standard
+ * Wayland clients call xkb_keymap_new_from_string on the buffer behind
+ * the wl_keyboard.keymap fd). Keycodes follow the evdev convention used
+ * on the wire: xkb keycode = evdev keycode + 8. No `include` directives,
+ * so no XKB data files are needed on the OS. */
+static const char wl_keymap_text[] =
+    "xkb_keymap {\n"
+    "xkb_keycodes {\n"
+    "minimum = 8;\n"
+    "maximum = 255;\n"
+    "<ESC> = 9;\n"
+    "<AE01> = 10; <AE02> = 11; <AE03> = 12; <AE04> = 13; <AE05> = 14;\n"
+    "<AE06> = 15; <AE07> = 16; <AE08> = 17; <AE09> = 18; <AE10> = 19;\n"
+    "<AE11> = 20; <AE12> = 21; <BKSP> = 22; <TAB> = 23;\n"
+    "<AD01> = 24; <AD02> = 25; <AD03> = 26; <AD04> = 27; <AD05> = 28;\n"
+    "<AD06> = 29; <AD07> = 30; <AD08> = 31; <AD09> = 32; <AD10> = 33;\n"
+    "<AD11> = 34; <AD12> = 35; <RTRN> = 36; <LCTL> = 37;\n"
+    "<AC01> = 38; <AC02> = 39; <AC03> = 40; <AC04> = 41; <AC05> = 42;\n"
+    "<AC06> = 43; <AC07> = 44; <AC08> = 45; <AC09> = 46;\n"
+    "<AC10> = 47; <AC11> = 48; <TLDE> = 49; <LFSH> = 50; <BKSL> = 51;\n"
+    "<AB01> = 52; <AB02> = 53; <AB03> = 54; <AB04> = 55; <AB05> = 56;\n"
+    "<AB06> = 57; <AB07> = 58; <AB08> = 59; <AB09> = 60; <AB10> = 61;\n"
+    "<RTSH> = 62; <KPMUL> = 63; <LALT> = 64; <SPCE> = 65; <CAPS> = 66;\n"
+    "<FK01> = 67; <FK02> = 68; <FK03> = 69; <FK04> = 70; <FK05> = 71;\n"
+    "<FK06> = 72; <FK07> = 73; <FK08> = 74; <FK09> = 75; <FK10> = 76;\n"
+    "<NMLK> = 77; <SCLK> = 78;\n"
+    "<KP7> = 79; <KP8> = 80; <KP9> = 81; <KPSU> = 82;\n"
+    "<KP4> = 83; <KP5> = 84; <KP6> = 85; <KPAD> = 86;\n"
+    "<KP1> = 87; <KP2> = 88; <KP3> = 89; <KP0> = 90; <KPDOT> = 91;\n"
+    "<LSGT> = 94; <FK11> = 95; <FK12> = 96;\n"
+    "<KPEN> = 104; <RCTL> = 105; <KPDV> = 106; <PRSC> = 107; <RALT> = 108;\n"
+    "<HOME> = 110; <UP> = 111; <PGUP> = 112; <LEFT> = 113; <RGHT> = 114;\n"
+    "<END> = 115; <DOWN> = 116; <PGDN> = 117; <INS> = 118; <DELE> = 119;\n"
+    "<LWIN> = 133; <RWIN> = 134;\n"
+    "};\n"
+    "xkb_types {\n"
+    "type \"ONE_LEVEL\" {\n"
+    "modifiers = none;\n"
+    "map[none] = Level1;\n"
+    "level_name[Level1] = \"Any\";\n"
+    "};\n"
+    "type \"TWO_LEVEL\" {\n"
+    "modifiers = Shift;\n"
+    "map[Shift] = Level2;\n"
+    "level_name[Level1] = \"Base\";\n"
+    "level_name[Level2] = \"Shift\";\n"
+    "};\n"
+    "type \"ALPHABETIC\" {\n"
+    "modifiers = Shift + Lock;\n"
+    "map[Shift] = Level2;\n"
+    "map[Lock] = Level2;\n"
+    "preserve[Lock] = Shift;\n"
+    "level_name[Level1] = \"Base\";\n"
+    "level_name[Level2] = \"Caps\";\n"
+    "};\n"
+    "};\n"
+    "xkb_compat {\n"
+    "interpret Shift_L + AnyOf(all) { action = SetMods(modifiers = Shift); };\n"
+    "interpret Shift_R + AnyOf(all) { action = SetMods(modifiers = Shift); };\n"
+    "interpret Control_L + AnyOf(all) { action = SetMods(modifiers = Control); };\n"
+    "interpret Control_R + AnyOf(all) { action = SetMods(modifiers = Control); };\n"
+    "interpret Alt_L + AnyOf(all) { action = SetMods(modifiers = Mod1); };\n"
+    "interpret Alt_R + AnyOf(all) { action = SetMods(modifiers = Mod1); };\n"
+    "interpret Super_L + AnyOf(all) { action = SetMods(modifiers = Mod4); };\n"
+    "interpret Super_R + AnyOf(all) { action = SetMods(modifiers = Mod4); };\n"
+    "interpret Caps_Lock + AnyOf(all) { action = LockMods(modifiers = Lock); };\n"
+    "interpret Num_Lock + AnyOf(all) { action = LockMods(modifiers = Mod2); };\n"
+    "};\n"
+    "xkb_symbols {\n"
+    "name[group1] = \"English (US)\";\n"
+    "key <ESC> { type = \"ONE_LEVEL\", symbols = [ Escape ] };\n"
+    "key <AE01> { type = \"TWO_LEVEL\", symbols = [ 1, exclam ] };\n"
+    "key <AE02> { type = \"TWO_LEVEL\", symbols = [ 2, at ] };\n"
+    "key <AE03> { type = \"TWO_LEVEL\", symbols = [ 3, numbersign ] };\n"
+    "key <AE04> { type = \"TWO_LEVEL\", symbols = [ 4, dollar ] };\n"
+    "key <AE05> { type = \"TWO_LEVEL\", symbols = [ 5, percent ] };\n"
+    "key <AE06> { type = \"TWO_LEVEL\", symbols = [ 6, asciicircum ] };\n"
+    "key <AE07> { type = \"TWO_LEVEL\", symbols = [ 7, ampersand ] };\n"
+    "key <AE08> { type = \"TWO_LEVEL\", symbols = [ 8, asterisk ] };\n"
+    "key <AE09> { type = \"TWO_LEVEL\", symbols = [ 9, parenleft ] };\n"
+    "key <AE10> { type = \"TWO_LEVEL\", symbols = [ 0, parenright ] };\n"
+    "key <AE11> { type = \"TWO_LEVEL\", symbols = [ minus, underscore ] };\n"
+    "key <AE12> { type = \"TWO_LEVEL\", symbols = [ equal, plus ] };\n"
+    "key <BKSP> { type = \"ONE_LEVEL\", symbols = [ BackSpace ] };\n"
+    "key <TAB> { type = \"ONE_LEVEL\", symbols = [ Tab ] };\n"
+    "key <AD01> { type = \"ALPHABETIC\", symbols = [ q, Q ] };\n"
+    "key <AD02> { type = \"ALPHABETIC\", symbols = [ w, W ] };\n"
+    "key <AD03> { type = \"ALPHABETIC\", symbols = [ e, E ] };\n"
+    "key <AD04> { type = \"ALPHABETIC\", symbols = [ r, R ] };\n"
+    "key <AD05> { type = \"ALPHABETIC\", symbols = [ t, T ] };\n"
+    "key <AD06> { type = \"ALPHABETIC\", symbols = [ y, Y ] };\n"
+    "key <AD07> { type = \"ALPHABETIC\", symbols = [ u, U ] };\n"
+    "key <AD08> { type = \"ALPHABETIC\", symbols = [ i, I ] };\n"
+    "key <AD09> { type = \"ALPHABETIC\", symbols = [ o, O ] };\n"
+    "key <AD10> { type = \"ALPHABETIC\", symbols = [ p, P ] };\n"
+    "key <AD11> { type = \"TWO_LEVEL\", symbols = [ bracketleft, braceleft ] };\n"
+    "key <AD12> { type = \"TWO_LEVEL\", symbols = [ bracketright, braceright ] };\n"
+    "key <RTRN> { type = \"ONE_LEVEL\", symbols = [ Return ] };\n"
+    "key <LCTL> { type = \"ONE_LEVEL\", symbols = [ Control_L ] };\n"
+    "key <AC01> { type = \"ALPHABETIC\", symbols = [ a, A ] };\n"
+    "key <AC02> { type = \"ALPHABETIC\", symbols = [ s, S ] };\n"
+    "key <AC03> { type = \"ALPHABETIC\", symbols = [ d, D ] };\n"
+    "key <AC04> { type = \"ALPHABETIC\", symbols = [ f, F ] };\n"
+    "key <AC05> { type = \"ALPHABETIC\", symbols = [ g, G ] };\n"
+    "key <AC06> { type = \"ALPHABETIC\", symbols = [ h, H ] };\n"
+    "key <AC07> { type = \"ALPHABETIC\", symbols = [ j, J ] };\n"
+    "key <AC08> { type = \"ALPHABETIC\", symbols = [ k, K ] };\n"
+    "key <AC09> { type = \"ALPHABETIC\", symbols = [ l, L ] };\n"
+    "key <AC10> { type = \"TWO_LEVEL\", symbols = [ semicolon, colon ] };\n"
+    "key <AC11> { type = \"TWO_LEVEL\", symbols = [ apostrophe, quotedbl ] };\n"
+    "key <TLDE> { type = \"TWO_LEVEL\", symbols = [ grave, asciitilde ] };\n"
+    "key <LFSH> { type = \"ONE_LEVEL\", symbols = [ Shift_L ] };\n"
+    "key <BKSL> { type = \"TWO_LEVEL\", symbols = [ backslash, bar ] };\n"
+    "key <AB01> { type = \"ALPHABETIC\", symbols = [ z, Z ] };\n"
+    "key <AB02> { type = \"ALPHABETIC\", symbols = [ x, X ] };\n"
+    "key <AB03> { type = \"ALPHABETIC\", symbols = [ c, C ] };\n"
+    "key <AB04> { type = \"ALPHABETIC\", symbols = [ v, V ] };\n"
+    "key <AB05> { type = \"ALPHABETIC\", symbols = [ b, B ] };\n"
+    "key <AB06> { type = \"ALPHABETIC\", symbols = [ n, N ] };\n"
+    "key <AB07> { type = \"ALPHABETIC\", symbols = [ m, M ] };\n"
+    "key <AB08> { type = \"TWO_LEVEL\", symbols = [ comma, less ] };\n"
+    "key <AB09> { type = \"TWO_LEVEL\", symbols = [ period, greater ] };\n"
+    "key <AB10> { type = \"TWO_LEVEL\", symbols = [ slash, question ] };\n"
+    "key <RTSH> { type = \"ONE_LEVEL\", symbols = [ Shift_R ] };\n"
+    "key <KPMUL> { type = \"ONE_LEVEL\", symbols = [ KP_Multiply ] };\n"
+    "key <LALT> { type = \"ONE_LEVEL\", symbols = [ Alt_L ] };\n"
+    "key <SPCE> { type = \"ONE_LEVEL\", symbols = [ space ] };\n"
+    "key <CAPS> { type = \"ONE_LEVEL\", symbols = [ Caps_Lock ] };\n"
+    "key <FK01> { type = \"ONE_LEVEL\", symbols = [ F1 ] };\n"
+    "key <FK02> { type = \"ONE_LEVEL\", symbols = [ F2 ] };\n"
+    "key <FK03> { type = \"ONE_LEVEL\", symbols = [ F3 ] };\n"
+    "key <FK04> { type = \"ONE_LEVEL\", symbols = [ F4 ] };\n"
+    "key <FK05> { type = \"ONE_LEVEL\", symbols = [ F5 ] };\n"
+    "key <FK06> { type = \"ONE_LEVEL\", symbols = [ F6 ] };\n"
+    "key <FK07> { type = \"ONE_LEVEL\", symbols = [ F7 ] };\n"
+    "key <FK08> { type = \"ONE_LEVEL\", symbols = [ F8 ] };\n"
+    "key <FK09> { type = \"ONE_LEVEL\", symbols = [ F9 ] };\n"
+    "key <FK10> { type = \"ONE_LEVEL\", symbols = [ F10 ] };\n"
+    "key <NMLK> { type = \"ONE_LEVEL\", symbols = [ Num_Lock ] };\n"
+    "key <SCLK> { type = \"ONE_LEVEL\", symbols = [ Scroll_Lock ] };\n"
+    "key <KP7> { type = \"ONE_LEVEL\", symbols = [ KP_7 ] };\n"
+    "key <KP8> { type = \"ONE_LEVEL\", symbols = [ KP_8 ] };\n"
+    "key <KP9> { type = \"ONE_LEVEL\", symbols = [ KP_9 ] };\n"
+    "key <KPSU> { type = \"ONE_LEVEL\", symbols = [ KP_Subtract ] };\n"
+    "key <KP4> { type = \"ONE_LEVEL\", symbols = [ KP_4 ] };\n"
+    "key <KP5> { type = \"ONE_LEVEL\", symbols = [ KP_5 ] };\n"
+    "key <KP6> { type = \"ONE_LEVEL\", symbols = [ KP_6 ] };\n"
+    "key <KPAD> { type = \"ONE_LEVEL\", symbols = [ KP_Add ] };\n"
+    "key <KP1> { type = \"ONE_LEVEL\", symbols = [ KP_1 ] };\n"
+    "key <KP2> { type = \"ONE_LEVEL\", symbols = [ KP_2 ] };\n"
+    "key <KP3> { type = \"ONE_LEVEL\", symbols = [ KP_3 ] };\n"
+    "key <KP0> { type = \"ONE_LEVEL\", symbols = [ KP_0 ] };\n"
+    "key <KPDOT> { type = \"ONE_LEVEL\", symbols = [ KP_Decimal ] };\n"
+    "key <LSGT> { type = \"TWO_LEVEL\", symbols = [ less, greater ] };\n"
+    "key <FK11> { type = \"ONE_LEVEL\", symbols = [ F11 ] };\n"
+    "key <FK12> { type = \"ONE_LEVEL\", symbols = [ F12 ] };\n"
+    "key <KPEN> { type = \"ONE_LEVEL\", symbols = [ KP_Enter ] };\n"
+    "key <RCTL> { type = \"ONE_LEVEL\", symbols = [ Control_R ] };\n"
+    "key <KPDV> { type = \"ONE_LEVEL\", symbols = [ KP_Divide ] };\n"
+    "key <PRSC> { type = \"ONE_LEVEL\", symbols = [ Print ] };\n"
+    "key <RALT> { type = \"ONE_LEVEL\", symbols = [ Alt_R ] };\n"
+    "key <HOME> { type = \"ONE_LEVEL\", symbols = [ Home ] };\n"
+    "key <UP> { type = \"ONE_LEVEL\", symbols = [ Up ] };\n"
+    "key <PGUP> { type = \"ONE_LEVEL\", symbols = [ Prior ] };\n"
+    "key <LEFT> { type = \"ONE_LEVEL\", symbols = [ Left ] };\n"
+    "key <RGHT> { type = \"ONE_LEVEL\", symbols = [ Right ] };\n"
+    "key <END> { type = \"ONE_LEVEL\", symbols = [ End ] };\n"
+    "key <DOWN> { type = \"ONE_LEVEL\", symbols = [ Down ] };\n"
+    "key <PGDN> { type = \"ONE_LEVEL\", symbols = [ Next ] };\n"
+    "key <INS> { type = \"ONE_LEVEL\", symbols = [ Insert ] };\n"
+    "key <DELE> { type = \"ONE_LEVEL\", symbols = [ Delete ] };\n"
+    "key <LWIN> { type = \"ONE_LEVEL\", symbols = [ Super_L ] };\n"
+    "key <RWIN> { type = \"ONE_LEVEL\", symbols = [ Super_R ] };\n"
+    "};\n"
+    "};\n";
+
+static uint32_t km_size;
+static uint32_t km_pages;
+static uintptr_t km_phys;
+
+static void km_copy_out(void)
+{
+    uint8_t* dst = (uint8_t*)km_phys;
+    for (uint32_t i = 0; i < km_size; i++)
+        dst[i] = (uint8_t)wl_keymap_text[i];
+}
 
 static void wl_zero(void* dst, uint32_t n)
 {
@@ -356,6 +552,7 @@ static void client_release(wl_client_t* c, int unmap);
 static void surface_destroy(wl_client_t* c, wl_surface_t* s);
 static void buffer_release(wl_client_t* c, int idx);
 static void send_xdg_configure(wl_client_t* c, wl_surface_t* s);
+static void push_fd(wl_client_t* c, int fd);
 
 static void send_delete_id(wl_client_t* c, uint32_t id)
 {
@@ -637,6 +834,27 @@ static void send_keyboard_repeat(wl_client_t* c, int obj)
     uint32_t off = msg_begin(c, (uint32_t)obj, 5);
     msg_i32(c, 25);
     msg_i32(c, 600);
+    msg_end(c, off);
+}
+
+/* wl_keyboard.keymap: format 1 = XKB_V1. The fd is the pseudo handle the
+ * client passes to wl_shm_map to get a read-only view of the keymap. */
+static void send_keyboard_keymap(wl_client_t* c, int obj)
+{
+    if (!km_phys)
+        return;
+    if (obj < 0 || !c->obj[obj].used)
+        return;
+    push_fd(c, WL_KEYMAP_FD);
+    static int km_logged;
+    if (!km_logged) {
+        km_logged = 1;
+        debug_puts("[wl] keymap sent\n");
+    }
+    uint32_t off = msg_begin(c, (uint32_t)obj, 0);
+    msg_u32(c, 1);
+    msg_u32(c, WL_KEYMAP_FD);
+    msg_u32(c, km_size);
     msg_end(c, off);
 }
 
@@ -1082,6 +1300,7 @@ static void handle_message(wl_client_t* c, const uint8_t* m, uint32_t size)
             uint32_t new_id = arg_u32(&a);
             if (!a.bad && obj_add(c, new_id, WL_OBJ_KEYBOARD, 0)) {
                 c->keyboard_obj = (int)new_id;
+                send_keyboard_keymap(c, (int)new_id);
                 send_keyboard_repeat(c, (int)new_id);
             }
         } else if (opcode == 2) {
@@ -1195,6 +1414,12 @@ void wl_init(void)
     wl_zero(bufs, sizeof(bufs));
     wl_zero(pools, sizeof(pools));
     g_kb_focus = 0;
+
+    km_size = (uint32_t)sizeof(wl_keymap_text) - 1;
+    km_pages = (km_size + 4095) / 4096;
+    km_phys = pmm_alloc_contig(km_pages);
+    if (km_phys)
+        km_copy_out();
 }
 
 int wl_connect(int pid)
@@ -1266,14 +1491,19 @@ int wl_recv(int cid, void* data, uint32_t len)
     return (int)n;
 }
 
+static void push_fd(wl_client_t* c, int fd)
+{
+    if (c->pending_fd_count >= WL_MAX_FDS)
+        return;
+    c->pending_fd[c->pending_fd_count++] = fd;
+}
+
 int wl_send_fd(int cid, int fd)
 {
     wl_client_t* c = client_owned(cid);
     if (!c || fd < 0)
         return -1;
-    if (c->pending_fd_count >= WL_MAX_FDS)
-        return -1;
-    c->pending_fd[c->pending_fd_count++] = fd;
+    push_fd(c, fd);
     return 0;
 }
 
@@ -1329,6 +1559,20 @@ uint64_t wl_shm_map(int cid, int fd)
     wl_client_t* c = client_owned(cid);
     if (!c)
         return 0;
+    if (fd == WL_KEYMAP_FD) {
+        if (!km_phys)
+            return 0;
+        if (!c->km_mapped) {
+            for (uint32_t p = 0; p < km_pages; p++) {
+                uint64_t va = WL_KEYMAP_BASE + (uint64_t)p * 4096;
+                if (!paging_map_user_page(va, (uint64_t)km_phys + (uint64_t)p * 4096,
+                                          PAGE_PRESENT | PAGE_USER))
+                    return 0;
+            }
+            c->km_mapped = 1;
+        }
+        return WL_KEYMAP_BASE;
+    }
     int pi = find_pool(c, fd);
     if (pi < 0)
         return 0;
@@ -1363,6 +1607,12 @@ static void client_release(wl_client_t* c, int unmap)
         for (uint32_t p = 0; p < pools[i].pages; p++)
             pmm_free(pools[i].phys + (uintptr_t)p * 4096);
         pools[i].used = 0;
+    }
+
+    if (unmap && c->km_mapped) {
+        for (uint32_t p = 0; p < km_pages; p++)
+            paging_unmap_user_page(WL_KEYMAP_BASE + (uint64_t)p * 4096);
+        c->km_mapped = 0;
     }
 
     wl_zero(c, sizeof(wl_client_t));
@@ -1533,6 +1783,7 @@ void wl_input_keyboard_focus(int id)
     wl_client_t* c = client_by_cid(s->client);
     if (!c || !c->keyboard_obj)
         return;
+    send_keyboard_keymap(c, c->keyboard_obj);
     send_keyboard_enter(c, c->keyboard_obj, (uint32_t)s->obj);
     send_keyboard_mods(c, c->keyboard_obj, c->last_mods);
     s->kb_entered = 1;
