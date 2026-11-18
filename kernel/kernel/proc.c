@@ -112,7 +112,10 @@ proc_t* proc_create(const char* elf_path, const char* name)
         paging_map_user_page(stack_bottom + p * PAGE_SIZE, phys,
                              PAGE_PRESENT | PAGE_RW | PAGE_USER);
     }
-    proc->user_esp = USER_STACK_TOP - 0x1000;
+    /* Entry rsp must be 8 mod 16: user code starts in a C function (_start)
+       that expects the state a call leaves behind, and SSE movaps locals
+       fault on a 16-byte aligned entry rsp. */
+    proc->user_esp = USER_STACK_TOP - 0x1008;
 
     paging_switch_user_pt(saved_cr3);
     proc->has_ctx = 0;
