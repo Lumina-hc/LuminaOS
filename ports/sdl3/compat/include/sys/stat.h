@@ -1,11 +1,11 @@
 /*
   Minimal freestanding <sys/stat.h> for the LuminaOS SDL3 port.
-  SDL_steam_virtual_gamepad.c includes it on non-Linux/non-Windows; the LUMIA
+  SDL_steam_virtual_gamepad.c includes it on non-Linux/non-Windows; the LUMINA
   config disables joystick so the file compiles to an empty translation unit,
   but the header must still exist for the preprocessor.
 */
-#ifndef LUMIA_COMPAT_SYS_STAT_H
-#define LUMIA_COMPAT_SYS_STAT_H
+#ifndef LUMINA_COMPAT_SYS_STAT_H
+#define LUMINA_COMPAT_SYS_STAT_H
 
 #include <sys/types.h>
 
@@ -17,4 +17,4 @@ struct stat {
 
 int stat(const char *path, struct stat *buf);
 
-#endif /* LUMIA_COMPAT_SYS_STAT_H */
+#endif /* LUMINA_COMPAT_SYS_STAT_H */

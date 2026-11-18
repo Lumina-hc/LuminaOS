@@ -15,7 +15,7 @@ CFLAGS=(-ffreestanding -nostdlib -fno-pic -fno-pie -m64
         -fno-asynchronous-unwind-tables -fno-unwind-tables
         -ffunction-sections -fdata-sections
         -O2 -Wall -std=gnu11
-        -D__LUMIA__=1 -DSDL_MAIN_HANDLED
+        -D__LUMINA__=1 -DSDL_MAIN_HANDLED
         -DSDL_SLOW_MEMCPY -DSDL_SLOW_MEMMOVE -DSDL_SLOW_MEMSET
         -I"$COMPAT/include" -I"$SDL/include" -I"$SDL/include/build_config")
 

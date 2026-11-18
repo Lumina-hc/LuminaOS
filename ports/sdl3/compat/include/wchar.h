@@ -3,8 +3,8 @@
   SDL only needs the wchar_t type and WCHAR_MIN/WCHAR_MAX macros.
   On x86_64 SysV, wchar_t is a signed int.
 */
-#ifndef LUMIA_COMPAT_WCHAR_H
-#define LUMIA_COMPAT_WCHAR_H
+#ifndef LUMINA_COMPAT_WCHAR_H
+#define LUMINA_COMPAT_WCHAR_H
 
 #include <stddef.h>
 
@@ -21,4 +21,4 @@ typedef __WCHAR_TYPE__ wchar_t;
 #define WCHAR_MAX 2147483647
 #endif
 
-#endif /* LUMIA_COMPAT_WCHAR_H */
+#endif /* LUMINA_COMPAT_WCHAR_H */

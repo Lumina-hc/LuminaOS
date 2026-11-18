@@ -27,7 +27,7 @@
 #define SYS_SLEEP    20
 #define SYS_YIELD    39
 
-static inline long lumia_syscall(long n, long a1, long a2, long a3, long a4)
+static inline long lumina_syscall(long n, long a1, long a2, long a3, long a4)
 {
     long r;
     __asm__ volatile (
@@ -71,20 +71,20 @@ char *strerror(int errnum)
    .bss (LOAD segment) into physical pages when loading an ELF; 1 MiB is
    plenty for a software-framebuffer SDL app (a 320x200 XRGB8888 surface is
    256 KiB) while leaving RAM for the kernel and other processes. Override
-   with -DLUMIA_SDL_HEAP_SIZE=... if an app needs more. */
-#ifndef LUMIA_SDL_HEAP_SIZE
-#define LUMIA_SDL_HEAP_SIZE (1u * 1024u * 1024u)
+   with -DLUMINA_SDL_HEAP_SIZE=... if an app needs more. */
+#ifndef LUMINA_SDL_HEAP_SIZE
+#define LUMINA_SDL_HEAP_SIZE (1u * 1024u * 1024u)
 #endif
 
-static char lumia_sdl_heap[LUMIA_SDL_HEAP_SIZE]
+static char lumina_sdl_heap[LUMINA_SDL_HEAP_SIZE]
     __attribute__((aligned(4096)));
-static char *lumia_brk = lumia_sdl_heap;
-static char *lumia_brk_start = lumia_sdl_heap;
-static char *lumia_brk_end = lumia_sdl_heap + LUMIA_SDL_HEAP_SIZE;
+static char *lumina_brk = lumina_sdl_heap;
+static char *lumina_brk_start = lumina_sdl_heap;
+static char *lumina_brk_end = lumina_sdl_heap + LUMINA_SDL_HEAP_SIZE;
 
 void *sbrk(long increment)
 {
-    char *old = lumia_brk;
+    char *old = lumina_brk;
 
     if (increment == 0) {
         return old;
@@ -92,19 +92,19 @@ void *sbrk(long increment)
     if (increment > 0) {
         /* Round the request up to a page boundary for dlmalloc. */
         unsigned long incr = ((unsigned long)increment + 4095ul) & ~4095ul;
-        if ((unsigned long)(lumia_brk_end - lumia_brk) < incr) {
+        if ((unsigned long)(lumina_brk_end - lumina_brk) < incr) {
             return (void *)-1;
         }
-        lumia_brk += incr;
+        lumina_brk += incr;
         return old;
     } else {
         long shr = -increment;
         /* Only allow rewinding down to the arena start. dlmalloc treats a
            failed shrink as "keep the memory", which is safe here. */
-        if ((long)(lumia_brk - lumia_brk_start) < shr) {
+        if ((long)(lumina_brk - lumina_brk_start) < shr) {
             return (void *)-1;
         }
-        lumia_brk -= shr;
+        lumina_brk -= shr;
         return old;
     }
 }
@@ -112,7 +112,7 @@ void *sbrk(long increment)
 /* ---- misc libc symbols used by SDL / GCC ------------------------------- */
 int sched_yield(void)
 {
-    lumia_syscall(SYS_YIELD, 0, 0, 0, 0);
+    lumina_syscall(SYS_YIELD, 0, 0, 0, 0);
     return 0;
 }
 
@@ -124,14 +124,14 @@ long sysconf(int name)
 
 void _exit(int status)
 {
-    lumia_syscall(SYS_EXIT, status, 0, 0, 0);
+    lumina_syscall(SYS_EXIT, status, 0, 0, 0);
     for (;;) { }
 }
 
-/* SDL_ExitProcess() calls this to terminate the current LUMIA process. */
-void lumia_sys_exit(void)
+/* SDL_ExitProcess() calls this to terminate the current LUMINA process. */
+void lumina_sys_exit(void)
 {
-    lumia_syscall(SYS_EXIT, 0, 0, 0, 0);
+    lumina_syscall(SYS_EXIT, 0, 0, 0, 0);
     for (;;) { }
 }
 
@@ -148,7 +148,7 @@ void exit(int status)
 int getpid(void)
 {
     /* No GETPID wrapper is exposed through the compat header; 0 is fine for
-       SDL's single-process use of getpid (it is not called on LUMIA). */
+       SDL's single-process use of getpid (it is not called on LUMINA). */
     return 0;
 }
 
@@ -177,7 +177,7 @@ off_t lseek(int fd, off_t offset, int whence)
 }
 
 /* A few generic SDL files (steam virtual gamepad, dlmalloc magic seed)
-   reference these POSIX helpers; on LUMIA they are meaningful no-ops. */
+   reference these POSIX helpers; on LUMINA they are meaningful no-ops. */
 int stat(const char *path, struct stat *buf)
 {
     (void)path; (void)buf;

@@ -4,8 +4,8 @@
   the underlying <stdint.h> types; we define the standard format strings
   for the LP64 data model used by LuminaOS (x86_64).
 */
-#ifndef LUMIA_COMPAT_INTTYPES_H
-#define LUMIA_COMPAT_INTTYPES_H
+#ifndef LUMINA_COMPAT_INTTYPES_H
+#define LUMINA_COMPAT_INTTYPES_H
 
 #include <stdint.h>
 
@@ -121,4 +121,4 @@
 #define SCNx32  "x"
 #define SCNx64  "lx"
 
-#endif /* LUMIA_COMPAT_INTTYPES_H */
+#endif /* LUMINA_COMPAT_INTTYPES_H */

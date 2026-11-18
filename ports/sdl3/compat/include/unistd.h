@@ -4,11 +4,11 @@
   SDL includes <unistd.h> in many core files (for _exit, getpid, sleep,
   read/write, ...). LuminaOS exposes these through the int 0x80 syscall ABI
   in app_libc.h; this header only supplies the prototypes so the generic SDL
-  code compiles. Files that would actually call these either use the LUMIA
+  code compiles. Files that would actually call these either use the LUMINA
   drivers (which call the syscalls directly) or are compiled out.
 */
-#ifndef LUMIA_COMPAT_UNISTD_H
-#define LUMIA_COMPAT_UNISTD_H
+#ifndef LUMINA_COMPAT_UNISTD_H
+#define LUMINA_COMPAT_UNISTD_H
 
 #include <stddef.h>
 #include <sys/types.h>
@@ -42,4 +42,4 @@ int close(int fd);
 long read(int fd, void *buf, size_t count);
 long write(int fd, const void *buf, size_t count);
 
-#endif /* LUMIA_COMPAT_UNISTD_H */
+#endif /* LUMINA_COMPAT_UNISTD_H */

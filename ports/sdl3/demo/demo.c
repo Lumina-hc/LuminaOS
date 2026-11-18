@@ -3,7 +3,7 @@
 
   Built as a freestanding ELF64 app (no crt0, no libc): the entry point is
   _start, matching third_party/LuminaOS-SDK/elf.ld. It exercises the pieces
-  the LUMIA port provides: SDL_Init(Video), a software framebuffer window,
+  the LUMINA port provides: SDL_Init(Video), a software framebuffer window,
   SDL_UpdateWindowSurface (blit via gfx syscalls), event polling and
   SDL_Delay (backed by the GET_TICKS/SLEEP syscalls).
 */
@@ -12,7 +12,7 @@
 #include <SDL3/SDL_main.h>
 
 /* LuminaOS exit syscall (int 0x80, syscall 0). */
-static void lumia_exit(void)
+static void lumina_exit(void)
 {
     __asm__ volatile ("int $0x80" : : "a"(0L), "D"(0L), "S"(0L), "d"(0L), "c"(0L));
     for (;;) { }
@@ -48,20 +48,20 @@ void _start(void)
     SDL_SetMainReady();
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        lumia_exit();
+        lumina_exit();
     }
 
     window = SDL_CreateWindow("SDL3 on LuminaOS", 320, 200, 0);
     if (!window) {
         SDL_Quit();
-        lumia_exit();
+        lumina_exit();
     }
 
     surface = SDL_GetWindowSurface(window);
     if (!surface) {
         SDL_DestroyWindow(window);
         SDL_Quit();
-        lumia_exit();
+        lumina_exit();
     }
 
     while (!quit) {
@@ -77,5 +77,5 @@ void _start(void)
 
     SDL_DestroyWindow(window);
     SDL_Quit();
-    lumia_exit();
+    lumina_exit();
 }

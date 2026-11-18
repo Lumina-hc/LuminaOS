@@ -6,7 +6,7 @@
 #
 # Usage (from the repo root):
 #   cmake -S third_party/SDL -B build-sdl \
-#     -DCMAKE_TOOLCHAIN_FILE=cmake/lumia-toolchain.cmake
+#     -DCMAKE_TOOLCHAIN_FILE=cmake/lumina-toolchain.cmake
 #   cmake --build build-sdl
 # Or simply run ./ports/sdl3/build_sdl.sh.
 
@@ -35,16 +35,16 @@ set(CMAKE_CXX_COMPILER_WORKS TRUE)
 # <errno.h>, ... shadow any system headers. SDL_SLOW_* forces SDL to use its
 # own bundled memcpy/memmove/memset instead of libc. HAVE_MMAP=0 makes
 # dlmalloc use MORECORE (sbrk) only, which the compat libc backs with a static
-# arena. __LUMIA__ selects SDL_PLATFORM_LUMIA and the LUMIA config header.
-set(LUMIA_COMPAT_INCLUDE "${CMAKE_CURRENT_LIST_DIR}/../ports/sdl3/compat/include")
-file(TO_CMAKE_PATH "${LUMIA_COMPAT_INCLUDE}" LUMIA_COMPAT_INCLUDE)
+# arena. __LUMINA__ selects SDL_PLATFORM_LUMINA and the LUMINA config header.
+set(LUMINA_COMPAT_INCLUDE "${CMAKE_CURRENT_LIST_DIR}/../ports/sdl3/compat/include")
+file(TO_CMAKE_PATH "${LUMINA_COMPAT_INCLUDE}" LUMINA_COMPAT_INCLUDE)
 
 # -ffunction-sections/-fdata-sections + --gc-sections at final link drop the
 # large amount of SDL code we don't use (unused subsystems pull in a lot via
 # cross references); -fno-asynchronous-unwind-tables removes ~100 KiB of
 # .eh_frame. Both matter because the LuminaOS ELF loader has size limits.
 set(CMAKE_C_FLAGS_INIT
-    "-ffreestanding -fno-pic -fno-pie -m64 -mno-red-zone -mno-mmx -mno-80387 -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables -ffunction-sections -fdata-sections -Wall -O2 -D__LUMIA__=1 -DSDL_SLOW_MEMCPY -DSDL_SLOW_MEMMOVE -DSDL_SLOW_MEMSET -DHAVE_MMAP=0 -I${LUMIA_COMPAT_INCLUDE}")
+    "-ffreestanding -fno-pic -fno-pie -m64 -mno-red-zone -mno-mmx -mno-80387 -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables -ffunction-sections -fdata-sections -Wall -O2 -D__LUMINA__=1 -DSDL_SLOW_MEMCPY -DSDL_SLOW_MEMMOVE -DSDL_SLOW_MEMSET -DHAVE_MMAP=0 -I${LUMINA_COMPAT_INCLUDE}")
 set(CMAKE_CXX_FLAGS_INIT "${CMAKE_C_FLAGS_INIT}")
 
 # Only search the toolchain's own headers/sysroot, never the host's.

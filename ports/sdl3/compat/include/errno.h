@@ -1,10 +1,10 @@
 /*
   Minimal freestanding <errno.h> for the LuminaOS SDL3 port.
   SDL's bundled dlmalloc assigns `errno = ENOMEM` on failure; a single
-  global errno lvalue is sufficient in the single-threaded LUMIA build.
+  global errno lvalue is sufficient in the single-threaded LUMINA build.
 */
-#ifndef LUMIA_COMPAT_ERRNO_H
-#define LUMIA_COMPAT_ERRNO_H
+#ifndef LUMINA_COMPAT_ERRNO_H
+#define LUMINA_COMPAT_ERRNO_H
 
 extern int errno;
 
@@ -21,4 +21,4 @@ extern int errno;
 #define ENOSYS  38
 #define EOVERFLOW 75
 
-#endif /* LUMIA_COMPAT_ERRNO_H */
+#endif /* LUMINA_COMPAT_ERRNO_H */

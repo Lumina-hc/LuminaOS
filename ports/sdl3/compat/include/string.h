@@ -7,8 +7,8 @@
   only has to satisfy the unconditional `#include <string.h>` in
   SDL_stdinc.h and pull in size_t / NULL.
 */
-#ifndef LUMIA_COMPAT_STRING_H
-#define LUMIA_COMPAT_STRING_H
+#ifndef LUMINA_COMPAT_STRING_H
+#define LUMINA_COMPAT_STRING_H
 
 #include <stddef.h>
 
@@ -28,4 +28,4 @@ char *strerror(int errnum);
 #define EINVAL  22
 #define ENOSYS  38
 
-#endif /* LUMIA_COMPAT_STRING_H */
+#endif /* LUMINA_COMPAT_STRING_H */

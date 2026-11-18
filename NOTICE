@@ -5,7 +5,7 @@ This product includes third-party software. The notices below are provided
 in accordance with the respective licenses.
 
 ================================================================================
-SDL3 (Simple DirectMedia Layer 3) - LUMIA platform port
+SDL3 (Simple DirectMedia Layer 3) - LUMINA platform port
 ================================================================================
 
   Copyright (C) Sam Lantinga and SDL contributors
@@ -14,8 +14,8 @@ SDL3 (Simple DirectMedia Layer 3) - LUMIA platform port
 
   MODIFIED SOURCE NOTICE:
   The SDL3 sources used by this project are NOT the original upstream
-  software. A LUMIA platform port is applied to upstream SDL3 (commit
-  fda4ece) by ports/sdl3/patches/0001-lumia-port.patch before building.
+  software. A LUMINA platform port is applied to upstream SDL3 (commit
+  fda4ece) by ports/sdl3/patches/0001-lumina-port.patch before building.
   The port was written for LuminaOS and is not affiliated with or endorsed
   by the SDL project.
 

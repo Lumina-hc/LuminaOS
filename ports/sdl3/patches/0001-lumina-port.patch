@@ -1,5 +1,5 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 94ac8c4..6f6b914 100644
+index 94ac8c4..5357b9b 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -3752,6 +3752,31 @@ elseif(NGAGE)
@@ -7,26 +7,26 @@ index 94ac8c4..6f6b914 100644
        gdi
    )
 +
-+elseif(LUMIA)
++elseif(LUMINA)
 +
 +  # LuminaOS: from-scratch x86_64 hobby OS, freestanding ELF user apps,
 +  # int 0x80 syscalls, no libc. Native video/timer/filesystem drivers live
-+  # in src/<subsystem>/lumia and use the SDK's syscall ABI. The build is
-+  # configured entirely by include/build_config/SDL_build_config_lumia.h.
++  # in src/<subsystem>/lumina and use the SDK's syscall ABI. The build is
++  # configured entirely by include/build_config/SDL_build_config_lumina.h.
 +  sdl_glob_sources(
-+    "${SDL3_SOURCE_DIR}/src/video/lumia/*.c"
-+    "${SDL3_SOURCE_DIR}/src/video/lumia/*.h"
++    "${SDL3_SOURCE_DIR}/src/video/lumina/*.c"
++    "${SDL3_SOURCE_DIR}/src/video/lumina/*.h"
 +  )
-+  set(SDL_VIDEO_DRIVER_LUMIA 1)
++  set(SDL_VIDEO_DRIVER_LUMINA 1)
 +  set(HAVE_SDL_VIDEO TRUE)
 +
-+  sdl_glob_sources("${SDL3_SOURCE_DIR}/src/timer/lumia/*.c")
-+  set(SDL_TIMER_LUMIA 1)
++  sdl_glob_sources("${SDL3_SOURCE_DIR}/src/timer/lumina/*.c")
++  set(SDL_TIMER_LUMINA 1)
 +  set(HAVE_SDL_TIMERS TRUE)
 +
-+  sdl_glob_sources("${SDL3_SOURCE_DIR}/src/filesystem/lumia/*.c")
-+  set(SDL_FILESYSTEM_LUMIA 1)
-+  set(SDL_FSOPS_LUMIA 1)
++  sdl_glob_sources("${SDL3_SOURCE_DIR}/src/filesystem/lumina/*.c")
++  set(SDL_FILESYSTEM_LUMINA 1)
++  set(SDL_FSOPS_LUMINA 1)
 +  set(HAVE_SDL_FILESYSTEM TRUE)
 +
 +  # SDL_uclibc provides the bundled libm (src/libm/*.c); SDL_malloc.c uses
@@ -39,7 +39,7 @@ index 94ac8c4..6f6b914 100644
  if(NOT HAVE_SDL_THREADS)
    # The Emscripten and N-Gage platform has been carefully vetted to work without threads
 -  if(EMSCRIPTEN OR NGAGE)
-+  if(EMSCRIPTEN OR NGAGE OR LUMIA)
++  if(EMSCRIPTEN OR NGAGE OR LUMINA)
      set(SDL_THREADS_DISABLED 1)
      sdl_glob_sources(
        "${SDL3_SOURCE_DIR}/src/thread/generic/*.c"
@@ -49,10 +49,10 @@ index 94ac8c4..6f6b914 100644
  # 1. replace all `#cmakedefine`'s and `@abc@`
 -configure_file("${SDL3_SOURCE_DIR}/include/build_config/SDL_build_config.h.cmake"
 -  "${SDL3_BINARY_DIR}/CMakeFiles/SDL_build_config.h.intermediate")
-+# LUMIA ships a hand-written config header (no libc feature probing needed),
++# LUMINA ships a hand-written config header (no libc feature probing needed),
 +# so use it verbatim instead of the CMake-generated template.
-+if(LUMIA)
-+  set(SDL_BUILD_CONFIG_TEMPLATE "${SDL3_SOURCE_DIR}/include/build_config/SDL_build_config_lumia.h")
++if(LUMINA)
++  set(SDL_BUILD_CONFIG_TEMPLATE "${SDL3_SOURCE_DIR}/include/build_config/SDL_build_config_lumina.h")
 +else()
 +  set(SDL_BUILD_CONFIG_TEMPLATE "${SDL3_SOURCE_DIR}/include/build_config/SDL_build_config.h.cmake")
 +endif()
@@ -62,7 +62,7 @@ index 94ac8c4..6f6b914 100644
  file(GENERATE
    OUTPUT "${SDL3_BINARY_DIR}/include-config-$<LOWER_CASE:$<CONFIG>>/build_config/SDL_build_config.h"
 diff --git a/cmake/sdlplatform.cmake b/cmake/sdlplatform.cmake
-index 14455f4..aad8833 100644
+index 14455f4..de982e8 100644
 --- a/cmake/sdlplatform.cmake
 +++ b/cmake/sdlplatform.cmake
 @@ -28,6 +28,8 @@ function(SDL_DetectCMakePlatform)
@@ -70,46 +70,46 @@ index 14455f4..aad8833 100644
    elseif(CMAKE_SYSTEM_NAME STREQUAL "DOS")
      set(sdl_cmake_platform dos)
 +  elseif(CMAKE_SYSTEM_NAME STREQUAL "LuminaOS")
-+    set(sdl_cmake_platform lumia)
++    set(sdl_cmake_platform lumina)
    elseif(NGAGESDK)
      set(sdl_cmake_platform ngage)
    elseif(PS2)
 diff --git a/include/SDL3/SDL_platform_defines.h b/include/SDL3/SDL_platform_defines.h
-index 0f5ab54..98030e5 100644
+index 0f5ab54..d71cba6 100644
 --- a/include/SDL3/SDL_platform_defines.h
 +++ b/include/SDL3/SDL_platform_defines.h
 @@ -516,4 +516,13 @@
  #define SDL_PLATFORM_HURD 1
  #endif
  
-+#ifdef __LUMIA__
++#ifdef __LUMINA__
 +
 +/**
 + * A preprocessor macro that is only defined if compiling for the LuminaOS
 + * hobby operating system (a from-scratch x86_64 kernel).
 + */
-+#define SDL_PLATFORM_LUMIA 1
++#define SDL_PLATFORM_LUMINA 1
 +#endif
 +
  #endif /* SDL_platform_defines_h_ */
 diff --git a/include/build_config/SDL_build_config.h b/include/build_config/SDL_build_config.h
-index a1658c2..644d36e 100644
+index a1658c2..cdfb3f8 100644
 --- a/include/build_config/SDL_build_config.h
 +++ b/include/build_config/SDL_build_config.h
 @@ -45,6 +45,8 @@
  #include "SDL_build_config_ios.h"
  #elif defined(SDL_PLATFORM_ANDROID)
  #include "SDL_build_config_android.h"
-+#elif defined(SDL_PLATFORM_LUMIA)
-+#include "SDL_build_config_lumia.h"
++#elif defined(SDL_PLATFORM_LUMINA)
++#include "SDL_build_config_lumina.h"
  #else
  /* This is a minimal configuration just to get SDL running on new platforms. */
  #include "SDL_build_config_minimal.h"
-diff --git a/include/build_config/SDL_build_config_lumia.h b/include/build_config/SDL_build_config_lumia.h
+diff --git a/include/build_config/SDL_build_config_lumina.h b/include/build_config/SDL_build_config_lumina.h
 new file mode 100644
-index 0000000..4fa7d63
+index 0000000..38a372e
 --- /dev/null
-+++ b/include/build_config/SDL_build_config_lumia.h
++++ b/include/build_config/SDL_build_config_lumina.h
 @@ -0,0 +1,91 @@
 +/*
 +  Simple DirectMedia Layer
@@ -121,14 +121,14 @@ index 0000000..4fa7d63
 +
 +  LuminaOS port: a from-scratch x86_64 hobby OS with no C library and no
 +  POSIX layer. This config is derived from SDL_build_config_minimal.h and
-+  adapted for the LUMIA platform: a native software-framebuffer video driver
++  adapted for the LUMINA platform: a native software-framebuffer video driver
 +  plus mouse/keyboard input, a timer driver and a filesystem driver, all
 +  implemented on top of the kernel's int 0x80 syscall ABI.
 +
 +  Deliberately NO HAVE_LIBC / HAVE_MALLOC / HAVE_MEM / HAVE_STR defines:
 +  leaving them undefined makes SDL use its own bundled implementations
 +  in src/stdlib, so no host libc is required. The only libc-y thing SDL
-+  still needs is an sbrk()-style morecore, which the LUMIA compat layer
++  still needs is an sbrk()-style morecore, which the LUMINA compat layer
 +  in ports/sdl3/compat/libc.c provides from a static arena.
 +
 +  The bundled SDL_string / SDL_snprintf / SDL_malloc cover strings,
@@ -136,8 +136,8 @@ index 0000000..4fa7d63
 +  the math routines the render code paths reference.
 +*/
 +
-+#ifndef SDL_build_config_lumia_h_
-+#define SDL_build_config_lumia_h_
++#ifndef SDL_build_config_lumina_h_
++#define SDL_build_config_lumina_h_
 +#define SDL_build_config_h_
 +
 +#include <SDL3/SDL_platform_defines.h>
@@ -192,29 +192,29 @@ index 0000000..4fa7d63
 +#define SDL_RENDER_DISABLED 1
 +#define SDL_GPU_DISABLED 1
 +
-+/* ---- the LUMIA native drivers ---- */
-+#define SDL_VIDEO_DRIVER_LUMIA 1
-+#define SDL_FILESYSTEM_LUMIA 1
-+#define SDL_FSOPS_LUMIA 1
++/* ---- the LUMINA native drivers ---- */
++#define SDL_VIDEO_DRIVER_LUMINA 1
++#define SDL_FILESYSTEM_LUMINA 1
++#define SDL_FSOPS_LUMINA 1
 +
-+/* Timer: we provide src/timer/lumia/SDL_systimer.c */
++/* Timer: we provide src/timer/lumina/SDL_systimer.c */
 +#define HAVE_SDL_TIMERS 1
-+#define SDL_TIMER_LUMIA 1
++#define SDL_TIMER_LUMINA 1
 +
-+#endif /* SDL_build_config_lumia_h_ */
++#endif /* SDL_build_config_lumina_h_ */
 diff --git a/src/SDL.c b/src/SDL.c
-index 6b6c201..3daaa07 100644
+index 6b6c201..ef0ae0c 100644
 --- a/src/SDL.c
 +++ b/src/SDL.c
 @@ -111,6 +111,13 @@ SDL_NORETURN void SDL_ExitProcess(int exitcode)
      exit(exitcode);
  #elif defined(SDL_PLATFORM_HAIKU)  // Haiku has _Exit, but it's not marked noreturn.
      _exit(exitcode);
-+#elif defined(SDL_PLATFORM_LUMIA)
++#elif defined(SDL_PLATFORM_LUMINA)
 +    {
 +        /* LuminaOS: terminate the current user process via int 0x80. */
-+        extern void lumia_sys_exit(void);
-+        lumia_sys_exit();
++        extern void lumina_sys_exit(void);
++        lumina_sys_exit();
 +        for (;;) { /* not reached */ }
 +    }
  #elif defined(HAVE__EXIT) // Upper case _Exit()
@@ -224,29 +224,29 @@ index 6b6c201..3daaa07 100644
      return "Nintendo 3DS";
  #elif defined(SDL_PLATFORM_HURD)
      return "GNU/Hurd";
-+#elif defined(SDL_PLATFORM_LUMIA)
++#elif defined(SDL_PLATFORM_LUMINA)
 +    return "LuminaOS";
  #elif defined(__managarm__)
      return "Managarm";
  #else
 diff --git a/src/dynapi/SDL_dynapi.h b/src/dynapi/SDL_dynapi.h
-index 04c310c..346dd59 100644
+index 04c310c..d68c88a 100644
 --- a/src/dynapi/SDL_dynapi.h
 +++ b/src/dynapi/SDL_dynapi.h
 @@ -67,6 +67,8 @@
  #define SDL_DYNAMIC_API 0 // devkitARM doesn't support dynamic linking
  #elif defined(SDL_PLATFORM_NGAGE)
  #define SDL_DYNAMIC_API 0
-+#elif defined(SDL_PLATFORM_LUMIA)
++#elif defined(SDL_PLATFORM_LUMINA)
 +#define SDL_DYNAMIC_API 0 // LuminaOS is freestanding; no dlopen or dynamic linking
  #elif defined(SDL_PLATFORM_DOS)
  #define SDL_DYNAMIC_API 0 // DJGPP doesn't support dynamic linking
  #elif defined(DYNAPI_NEEDS_DLOPEN) && !defined(HAVE_DLOPEN)
-diff --git a/src/filesystem/lumia/SDL_sysfilesystem.c b/src/filesystem/lumia/SDL_sysfilesystem.c
+diff --git a/src/filesystem/lumina/SDL_sysfilesystem.c b/src/filesystem/lumina/SDL_sysfilesystem.c
 new file mode 100644
-index 0000000..8d02e77
+index 0000000..114d3ec
 --- /dev/null
-+++ b/src/filesystem/lumia/SDL_sysfilesystem.c
++++ b/src/filesystem/lumina/SDL_sysfilesystem.c
 @@ -0,0 +1,338 @@
 +/*
 +  Simple DirectMedia Layer
@@ -263,13 +263,13 @@ index 0000000..8d02e77
 +*/
 +#include "SDL_internal.h"
 +
-+#if defined(SDL_FILESYSTEM_LUMIA) || defined(SDL_FSOPS_LUMIA)
++#if defined(SDL_FILESYSTEM_LUMINA) || defined(SDL_FSOPS_LUMINA)
 +
 +#include "../SDL_sysfilesystem.h"
-+#include "../../video/lumia/lumia_syscall.h"
++#include "../../video/lumina/lumina_syscall.h"
 +
-+#define LUMIA_FS_ATTR_DIRECTORY 0x10
-+#define LUMIA_FS_MAX_ENTRIES    64
++#define LUMINA_FS_ATTR_DIRECTORY 0x10
++#define LUMINA_FS_MAX_ENTRIES    64
 +
 +/* --- base / pref / user paths ------------------------------------------- */
 +
@@ -306,7 +306,7 @@ index 0000000..8d02e77
 +/* --- enumeration -------------------------------------------------------- */
 +
 +/* Trim trailing spaces from a FAT 8.3 name into a NUL-terminated buffer. */
-+static void LUMIA_TrimName(const char name[12], char out[13])
++static void LUMINA_TrimName(const char name[12], char out[13])
 +{
 +    int len = 12;
 +    int i;
@@ -321,21 +321,21 @@ index 0000000..8d02e77
 +
 +bool SDL_SYS_EnumerateDirectory(const char *path, SDL_EnumerateDirectoryCallback cb, void *userdata)
 +{
-+    lumia_dir_entry_t entries[LUMIA_FS_MAX_ENTRIES];
++    lumina_dir_entry_t entries[LUMINA_FS_MAX_ENTRIES];
 +    int count, i;
 +
 +    (void)path; /* kernel lists the root directory regardless of path */
 +
-+    count = lumia_file_list(entries, (int)sizeof(entries));
++    count = lumina_file_list(entries, (int)sizeof(entries));
 +    if (count < 0) {
-+        return SDL_SetError("LUMIA FILE_LIST failed");
++        return SDL_SetError("LUMINA FILE_LIST failed");
 +    }
 +
 +    for (i = 0; i < count; ++i) {
 +        char fname[13];
 +        SDL_EnumerationResult result;
 +
-+        LUMIA_TrimName(entries[i].name, fname);
++        LUMINA_TrimName(entries[i].name, fname);
 +        if (fname[0] == '\0') {
 +            continue;
 +        }
@@ -353,7 +353,7 @@ index 0000000..8d02e77
 +
 +bool SDL_SYS_GetPathInfo(const char *path, SDL_PathInfo *info)
 +{
-+    lumia_dir_entry_t entries[LUMIA_FS_MAX_ENTRIES];
++    lumina_dir_entry_t entries[LUMINA_FS_MAX_ENTRIES];
 +    int count, i;
 +    const char *name = path;
 +
@@ -367,19 +367,19 @@ index 0000000..8d02e77
 +        ++name;
 +    }
 +
-+    count = lumia_file_list(entries, (int)sizeof(entries));
++    count = lumina_file_list(entries, (int)sizeof(entries));
 +    if (count < 0) {
-+        return SDL_SetError("LUMIA FILE_LIST failed");
++        return SDL_SetError("LUMINA FILE_LIST failed");
 +    }
 +
 +    for (i = 0; i < count; ++i) {
 +        char fname[13];
-+        LUMIA_TrimName(entries[i].name, fname);
++        LUMINA_TrimName(entries[i].name, fname);
 +        if (fname[0] == '\0') {
 +            continue;
 +        }
 +        if (SDL_strcasecmp(fname, name) == 0) {
-+            info->type = (entries[i].attr & LUMIA_FS_ATTR_DIRECTORY)
++            info->type = (entries[i].attr & LUMINA_FS_ATTR_DIRECTORY)
 +                             ? SDL_PATHTYPE_DIRECTORY
 +                             : SDL_PATHTYPE_FILE;
 +            info->size = (Uint64)entries[i].size;
@@ -425,7 +425,7 @@ index 0000000..8d02e77
 +   and flushed back to FILE_WRITE on close. This keeps SDL_LoadFile / BMP /
 +   WAV loading working for files up to the kernel's buffer limit.
 +*/
-+typedef struct LUMIA_IOData
++typedef struct LUMINA_IOData
 +{
 +    char *buf;        /* in-memory file contents */
 +    size_t size;      /* valid bytes */
@@ -434,17 +434,17 @@ index 0000000..8d02e77
 +    bool writable;
 +    bool dirty;
 +    char path[64];    /* FAT 8.3 name */
-+} LUMIA_IOData;
++} LUMINA_IOData;
 +
-+static Sint64 SDLCALL LUMIA_IO_size(void *userdata)
++static Sint64 SDLCALL LUMINA_IO_size(void *userdata)
 +{
-+    LUMIA_IOData *io = (LUMIA_IOData *)userdata;
++    LUMINA_IOData *io = (LUMINA_IOData *)userdata;
 +    return (Sint64)io->size;
 +}
 +
-+static Sint64 SDLCALL LUMIA_IO_seek(void *userdata, Sint64 offset, SDL_IOWhence whence)
++static Sint64 SDLCALL LUMINA_IO_seek(void *userdata, Sint64 offset, SDL_IOWhence whence)
 +{
-+    LUMIA_IOData *io = (LUMIA_IOData *)userdata;
++    LUMINA_IOData *io = (LUMINA_IOData *)userdata;
 +    Sint64 base;
 +
 +    switch (whence) {
@@ -463,9 +463,9 @@ index 0000000..8d02e77
 +    }
 +}
 +
-+static size_t SDLCALL LUMIA_IO_read(void *userdata, void *ptr, size_t size, SDL_IOStatus *status)
++static size_t SDLCALL LUMINA_IO_read(void *userdata, void *ptr, size_t size, SDL_IOStatus *status)
 +{
-+    LUMIA_IOData *io = (LUMIA_IOData *)userdata;
++    LUMINA_IOData *io = (LUMINA_IOData *)userdata;
 +    size_t avail;
 +
 +    if (io->pos >= io->size) {
@@ -481,9 +481,9 @@ index 0000000..8d02e77
 +    return size;
 +}
 +
-+static size_t SDLCALL LUMIA_IO_write(void *userdata, const void *ptr, size_t size, SDL_IOStatus *status)
++static size_t SDLCALL LUMINA_IO_write(void *userdata, const void *ptr, size_t size, SDL_IOStatus *status)
 +{
-+    LUMIA_IOData *io = (LUMIA_IOData *)userdata;
++    LUMINA_IOData *io = (LUMINA_IOData *)userdata;
 +
 +    if (!io->writable) {
 +        *status = SDL_IO_STATUS_READONLY;
@@ -508,12 +508,12 @@ index 0000000..8d02e77
 +    return size;
 +}
 +
-+static bool SDLCALL LUMIA_IO_flush(void *userdata, SDL_IOStatus *status)
++static bool SDLCALL LUMINA_IO_flush(void *userdata, SDL_IOStatus *status)
 +{
-+    LUMIA_IOData *io = (LUMIA_IOData *)userdata;
++    LUMINA_IOData *io = (LUMINA_IOData *)userdata;
 +    (void)status;
 +    if (io->dirty && io->writable) {
-+        if (lumia_file_write(io->path, io->buf, (int)io->size) < 0) {
++        if (lumina_file_write(io->path, io->buf, (int)io->size) < 0) {
 +            return false;
 +        }
 +        io->dirty = false;
@@ -521,12 +521,12 @@ index 0000000..8d02e77
 +    return true;
 +}
 +
-+static bool SDLCALL LUMIA_IO_close(void *userdata)
++static bool SDLCALL LUMINA_IO_close(void *userdata)
 +{
-+    LUMIA_IOData *io = (LUMIA_IOData *)userdata;
++    LUMINA_IOData *io = (LUMINA_IOData *)userdata;
 +    bool ok = true;
 +    if (io->dirty && io->writable) {
-+        if (lumia_file_write(io->path, io->buf, (int)io->size) < 0) {
++        if (lumina_file_write(io->path, io->buf, (int)io->size) < 0) {
 +            ok = false;
 +        }
 +    }
@@ -535,9 +535,9 @@ index 0000000..8d02e77
 +    return ok;
 +}
 +
-+SDL_IOStream *SDL_LUMIA_IOFromFile(const char *file, const char *mode)
++SDL_IOStream *SDL_LUMINA_IOFromFile(const char *file, const char *mode)
 +{
-+    LUMIA_IOData *io;
++    LUMINA_IOData *io;
 +    SDL_IOStreamInterface iface;
 +    SDL_IOStream *iostr;
 +    const char *name = file;
@@ -550,7 +550,7 @@ index 0000000..8d02e77
 +        ++name;
 +    }
 +
-+    io = (LUMIA_IOData *)SDL_calloc(1, sizeof(*io));
++    io = (LUMINA_IOData *)SDL_calloc(1, sizeof(*io));
 +    if (!io) {
 +        return NULL;
 +    }
@@ -565,49 +565,49 @@ index 0000000..8d02e77
 +    }
 +
 +    if (!truncate) {
-+        int n = lumia_file_read(name, io->buf, (int)io->cap);
++        int n = lumina_file_read(name, io->buf, (int)io->cap);
 +        io->size = (n > 0) ? (size_t)n : 0;
 +    }
 +    io->pos = (SDL_strchr(mode, 'a') != NULL) ? io->size : 0;
 +
 +    SDL_INIT_INTERFACE(&iface);
-+    iface.size = LUMIA_IO_size;
-+    iface.seek = LUMIA_IO_seek;
-+    iface.read = LUMIA_IO_read;
-+    iface.write = LUMIA_IO_write;
-+    iface.flush = LUMIA_IO_flush;
-+    iface.close = LUMIA_IO_close;
++    iface.size = LUMINA_IO_size;
++    iface.seek = LUMINA_IO_seek;
++    iface.read = LUMINA_IO_read;
++    iface.write = LUMINA_IO_write;
++    iface.flush = LUMINA_IO_flush;
++    iface.close = LUMINA_IO_close;
 +
 +    iostr = SDL_OpenIO(&iface, io);
 +    if (!iostr) {
-+        LUMIA_IO_close(io);
++        LUMINA_IO_close(io);
 +    }
 +    return iostr;
 +}
 +
-+#endif /* SDL_FILESYSTEM_LUMIA || SDL_FSOPS_LUMIA */
++#endif /* SDL_FILESYSTEM_LUMINA || SDL_FSOPS_LUMINA */
 diff --git a/src/io/SDL_iostream.c b/src/io/SDL_iostream.c
-index fb78fc2..50fe935 100644
+index fb78fc2..57b67ff 100644
 --- a/src/io/SDL_iostream.c
 +++ b/src/io/SDL_iostream.c
 @@ -1173,6 +1173,12 @@ SDL_IOStream *SDL_IOFromFile(const char *file, const char *mode)
          iostr = SDL_IOFromHandle(handle, mode, true);
      }
  
-+#elif defined(SDL_PLATFORM_LUMIA)
++#elif defined(SDL_PLATFORM_LUMINA)
 +    /* LuminaOS: whole-file read/write through the FILE_READ/FILE_WRITE
 +       syscalls, surfaced as a normal in-memory SDL_IOStream. */
-+    extern SDL_IOStream *SDL_LUMIA_IOFromFile(const char *file, const char *mode);
-+    iostr = SDL_LUMIA_IOFromFile(file, mode);
++    extern SDL_IOStream *SDL_LUMINA_IOFromFile(const char *file, const char *mode);
++    iostr = SDL_LUMINA_IOFromFile(file, mode);
 +
  #elif defined(HAVE_STDIO_H)
      {
          #if defined(SDL_PLATFORM_3DS)
-diff --git a/src/timer/lumia/SDL_systimer.c b/src/timer/lumia/SDL_systimer.c
+diff --git a/src/timer/lumina/SDL_systimer.c b/src/timer/lumina/SDL_systimer.c
 new file mode 100644
-index 0000000..1afb4f6
+index 0000000..a3ee0b8
 --- /dev/null
-+++ b/src/timer/lumia/SDL_systimer.c
++++ b/src/timer/lumina/SDL_systimer.c
 @@ -0,0 +1,42 @@
 +/*
 +  Simple DirectMedia Layer
@@ -622,14 +622,14 @@ index 0000000..1afb4f6
 +*/
 +#include "SDL_internal.h"
 +
-+#ifdef SDL_TIMER_LUMIA
++#ifdef SDL_TIMER_LUMINA
 +
 +#include "../SDL_timer_c.h"
-+#include "../../video/lumia/lumia_syscall.h"
++#include "../../video/lumina/lumina_syscall.h"
 +
 +Uint64 SDL_GetPerformanceCounter(void)
 +{
-+    return (Uint64)lumia_get_ticks();
++    return (Uint64)lumina_get_ticks();
 +}
 +
 +Uint64 SDL_GetPerformanceFrequency(void)
@@ -646,42 +646,42 @@ index 0000000..1afb4f6
 +        ms = 1;
 +    }
 +    if (ms > 0) {
-+        lumia_sys_sleep((int)(ms > 0x7fffffff ? 0x7fffffff : (long)ms));
++        lumina_sys_sleep((int)(ms > 0x7fffffff ? 0x7fffffff : (long)ms));
 +    }
 +}
 +
-+#endif /* SDL_TIMER_LUMIA */
++#endif /* SDL_TIMER_LUMINA */
 diff --git a/src/video/SDL_sysvideo.h b/src/video/SDL_sysvideo.h
-index f4c6e50..6f53c29 100644
+index f4c6e50..1ce8d31 100644
 --- a/src/video/SDL_sysvideo.h
 +++ b/src/video/SDL_sysvideo.h
 @@ -565,6 +565,7 @@ extern VideoBootStrap OFFSCREEN_bootstrap;
  extern VideoBootStrap QNX_bootstrap;
  extern VideoBootStrap OPENVR_bootstrap;
  extern VideoBootStrap DOSVESA_bootstrap;
-+extern VideoBootStrap LUMIA_bootstrap;
++extern VideoBootStrap LUMINA_bootstrap;
  
  extern bool SDL_UninitializedVideo(void);
  // Use SDL_OnVideoThread() sparingly, to avoid regressions in use cases that currently happen to work
 diff --git a/src/video/SDL_video.c b/src/video/SDL_video.c
-index 6a75e19..a563027 100644
+index 6a75e19..55d9511 100644
 --- a/src/video/SDL_video.c
 +++ b/src/video/SDL_video.c
 @@ -146,6 +146,9 @@ static VideoBootStrap *bootstrap[] = {
  #ifdef SDL_VIDEO_DRIVER_OFFSCREEN
      &OFFSCREEN_bootstrap,
  #endif
-+#ifdef SDL_VIDEO_DRIVER_LUMIA
-+    &LUMIA_bootstrap,
++#ifdef SDL_VIDEO_DRIVER_LUMINA
++    &LUMINA_bootstrap,
 +#endif
  #ifdef SDL_VIDEO_DRIVER_DUMMY
      &DUMMY_bootstrap,
  #ifdef SDL_INPUT_LINUXEV
-diff --git a/src/video/lumia/SDL_lumiaevents.c b/src/video/lumia/SDL_lumiaevents.c
+diff --git a/src/video/lumina/SDL_luminaevents.c b/src/video/lumina/SDL_luminaevents.c
 new file mode 100644
-index 0000000..5935684
+index 0000000..6f95287
 --- /dev/null
-+++ b/src/video/lumia/SDL_lumiaevents.c
++++ b/src/video/lumina/SDL_luminaevents.c
 @@ -0,0 +1,93 @@
 +/*
 +  LuminaOS SDL3 video driver - event pump.
@@ -691,18 +691,18 @@ index 0000000..5935684
 +*/
 +#include "SDL_internal.h"
 +
-+#ifdef SDL_VIDEO_DRIVER_LUMIA
++#ifdef SDL_VIDEO_DRIVER_LUMINA
 +
 +#include "../SDL_sysvideo.h"
 +#include "../../events/SDL_events_c.h"
 +#include "../../events/SDL_keyboard_c.h"
 +#include "../../events/SDL_mouse_c.h"
-+#include "SDL_lumiavideo.h"
-+#include "lumia_syscall.h"
++#include "SDL_luminavideo.h"
++#include "lumina_syscall.h"
 +
 +/* LuminaOS getchar_nb() yields ASCII/control codes. Map the common ones to
 +   SDL scancodes; everything else falls back to SDL_SCANCODE_UNKNOWN. */
-+static SDL_Scancode LUMIA_ScancodeFromAscii(int ch)
++static SDL_Scancode LUMINA_ScancodeFromAscii(int ch)
 +{
 +    if (ch >= 'a' && ch <= 'z') {
 +        return (SDL_Scancode)(SDL_SCANCODE_A + (ch - 'a'));
@@ -725,7 +725,7 @@ index 0000000..5935684
 +    }
 +}
 +
-+void LUMIA_PumpEvents(SDL_VideoDevice *_this)
++void LUMINA_PumpEvents(SDL_VideoDevice *_this)
 +{
 +    SDL_Window *window;
 +    static bool prev_left, prev_right;
@@ -736,22 +736,22 @@ index 0000000..5935684
 +    now = SDL_GetTicksNS();
 +
 +    /* Close request from the window manager / OS. */
-+    if (lumia_sys_win_should_close()) {
++    if (lumina_sys_win_should_close()) {
 +        SDL_SendQuit();
 +    }
 +
 +    /* Mouse motion (absolute coordinates relative to the active window). */
 +    window = SDL_GetMouseFocus();
-+    x = lumia_mouse_x();
-+    y = lumia_mouse_y();
++    x = lumina_mouse_x();
++    y = lumina_mouse_y();
 +    if (window) {
 +        SDL_SendMouseMotion(now, window, 0, false, (float)x, (float)y);
 +    }
 +
 +    /* Mouse buttons: compare against the previous poll to generate events. */
 +    {
-+        bool left = lumia_mouse_left() ? true : false;
-+        bool right = lumia_mouse_right() ? true : false;
++        bool left = lumina_mouse_left() ? true : false;
++        bool right = lumina_mouse_right() ? true : false;
 +        if (window) {
 +            if (left != prev_left) {
 +                SDL_SendMouseButton(now, window, 0, SDL_BUTTON_LEFT, left);
@@ -766,21 +766,21 @@ index 0000000..5935684
 +
 +    /* Keyboard: non-blocking read, one key per pump. */
 +    {
-+        int ch = lumia_getchar_nb();
++        int ch = lumina_getchar_nb();
 +        if (ch >= 0 && ch != 0) {
-+            SDL_Scancode scancode = LUMIA_ScancodeFromAscii(ch);
++            SDL_Scancode scancode = LUMINA_ScancodeFromAscii(ch);
 +            SDL_SendKeyboardKey(now, 0, ch, scancode, true);
 +            SDL_SendKeyboardKey(now, 0, ch, scancode, false);
 +        }
 +    }
 +}
 +
-+#endif /* SDL_VIDEO_DRIVER_LUMIA */
-diff --git a/src/video/lumia/SDL_lumiaframebuffer.c b/src/video/lumia/SDL_lumiaframebuffer.c
++#endif /* SDL_VIDEO_DRIVER_LUMINA */
+diff --git a/src/video/lumina/SDL_luminaframebuffer.c b/src/video/lumina/SDL_luminaframebuffer.c
 new file mode 100644
-index 0000000..5adc5b8
+index 0000000..1e33d93
 --- /dev/null
-+++ b/src/video/lumia/SDL_lumiaframebuffer.c
++++ b/src/video/lumina/SDL_luminaframebuffer.c
 @@ -0,0 +1,120 @@
 +/*
 +  LuminaOS SDL3 video driver - software framebuffer.
@@ -794,15 +794,15 @@ index 0000000..5adc5b8
 +*/
 +#include "SDL_internal.h"
 +
-+#ifdef SDL_VIDEO_DRIVER_LUMIA
++#ifdef SDL_VIDEO_DRIVER_LUMINA
 +
 +#include "../SDL_sysvideo.h"
 +#include "../SDL_pixels_c.h"
 +#include "../../SDL_properties_c.h"
-+#include "SDL_lumiavideo.h"
-+#include "lumia_syscall.h"
++#include "SDL_luminavideo.h"
++#include "lumina_syscall.h"
 +
-+bool SDL_LUMIA_CreateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
++bool SDL_LUMINA_CreateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
 +                                       SDL_PixelFormat *format, void **pixels, int *pitch)
 +{
 +    SDL_Surface *surface;
@@ -817,21 +817,21 @@ index 0000000..5adc5b8
 +        return false;
 +    }
 +
-+    SDL_SetSurfaceProperty(SDL_GetWindowProperties(window), LUMIA_SURFACE, surface);
++    SDL_SetSurfaceProperty(SDL_GetWindowProperties(window), LUMINA_SURFACE, surface);
 +    *format = surface_format;
 +    *pixels = surface->pixels;
 +    *pitch = surface->pitch;
 +    return true;
 +}
 +
-+void SDL_LUMIA_DestroyWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window)
++void SDL_LUMINA_DestroyWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window)
 +{
 +    (void)_this;
-+    SDL_ClearProperty(SDL_GetWindowProperties(window), LUMIA_SURFACE);
++    SDL_ClearProperty(SDL_GetWindowProperties(window), LUMINA_SURFACE);
 +}
 +
 +/* Blit a rectangle of XRGB8888 pixels using horizontal runs. */
-+static void LUMIA_BlitSurface(SDL_Surface *surface, const SDL_Rect *dirty)
++static void LUMINA_BlitSurface(SDL_Surface *surface, const SDL_Rect *dirty)
 +{
 +    const Uint32 *row;
 +    int y, x;
@@ -865,7 +865,7 @@ index 0000000..5adc5b8
 +            if (run > 0xffff) {
 +                run = 0xffff;
 +            }
-+            lumia_gfx_fill_rect(x, y, run, 1, color);
++            lumina_gfx_fill_rect(x, y, run, 1, color);
 +            x += run;
 +        }
 +    }
@@ -873,7 +873,7 @@ index 0000000..5adc5b8
 +    SDL_UnlockSurface(surface);
 +}
 +
-+bool SDL_LUMIA_UpdateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
++bool SDL_LUMINA_UpdateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
 +                                       const SDL_Rect *rects, int numrects)
 +{
 +    SDL_Surface *surface;
@@ -882,31 +882,31 @@ index 0000000..5adc5b8
 +    (void)_this;
 +
 +    surface = (SDL_Surface *)SDL_GetPointerProperty(SDL_GetWindowProperties(window),
-+                                                    LUMIA_SURFACE, NULL);
++                                                    LUMINA_SURFACE, NULL);
 +    if (!surface) {
-+        return SDL_SetError("Couldn't find LUMIA surface for window");
++        return SDL_SetError("Couldn't find LUMINA surface for window");
 +    }
 +
 +    if (numrects == 0) {
 +        SDL_Rect full = { 0, 0, surface->w, surface->h };
-+        LUMIA_BlitSurface(surface, &full);
++        LUMINA_BlitSurface(surface, &full);
 +    } else {
 +        for (i = 0; i < numrects; ++i) {
-+            LUMIA_BlitSurface(surface, &rects[i]);
++            LUMINA_BlitSurface(surface, &rects[i]);
 +        }
 +    }
 +
 +    /* Blit the window surface to the framebuffer. */
-+    lumia_gfx_flush();
++    lumina_gfx_flush();
 +    return true;
 +}
 +
-+#endif /* SDL_VIDEO_DRIVER_LUMIA */
-diff --git a/src/video/lumia/SDL_lumiavideo.c b/src/video/lumia/SDL_lumiavideo.c
++#endif /* SDL_VIDEO_DRIVER_LUMINA */
+diff --git a/src/video/lumina/SDL_luminavideo.c b/src/video/lumina/SDL_luminavideo.c
 new file mode 100644
-index 0000000..f680067
+index 0000000..a0168de
 --- /dev/null
-+++ b/src/video/lumia/SDL_lumiavideo.c
++++ b/src/video/lumina/SDL_luminavideo.c
 @@ -0,0 +1,92 @@
 +/*
 +  LuminaOS SDL3 video driver - bootstrap and device setup.
@@ -918,61 +918,61 @@ index 0000000..f680067
 +*/
 +#include "SDL_internal.h"
 +
-+#ifdef SDL_VIDEO_DRIVER_LUMIA
++#ifdef SDL_VIDEO_DRIVER_LUMINA
 +
 +#include "../SDL_sysvideo.h"
 +#include "../SDL_pixels_c.h"
 +#include "../../events/SDL_events_c.h"
 +
-+#include "SDL_lumiavideo.h"
-+#include "lumia_syscall.h"
++#include "SDL_luminavideo.h"
++#include "lumina_syscall.h"
 +
-+#define LUMIAVID_DRIVER_NAME "lumia"
++#define LUMINAVID_DRIVER_NAME "lumina"
 +
 +/* Forward declarations (defined below). */
-+static bool LUMIA_SetRelativeMouseMode(bool enabled);
-+bool LUMIA_VideoInit(SDL_VideoDevice *_this);
-+void LUMIA_VideoQuit(SDL_VideoDevice *_this);
++static bool LUMINA_SetRelativeMouseMode(bool enabled);
++bool LUMINA_VideoInit(SDL_VideoDevice *_this);
++void LUMINA_VideoQuit(SDL_VideoDevice *_this);
 +
 +/* ---- device lifecycle -------------------------------------------------- */
-+static void LUMIA_DeleteDevice(SDL_VideoDevice *device)
++static void LUMINA_DeleteDevice(SDL_VideoDevice *device)
 +{
 +    SDL_free(device);
 +}
 +
-+static SDL_VideoDevice *LUMIA_CreateDevice(void)
++static SDL_VideoDevice *LUMINA_CreateDevice(void)
 +{
 +    SDL_VideoDevice *device = (SDL_VideoDevice *)SDL_calloc(1, sizeof(SDL_VideoDevice));
 +    if (!device) {
 +        return NULL;
 +    }
 +
-+    device->VideoInit = LUMIA_VideoInit;
-+    device->VideoQuit = LUMIA_VideoQuit;
-+    device->PumpEvents = LUMIA_PumpEvents;
-+    device->CreateWindowFramebuffer = SDL_LUMIA_CreateWindowFramebuffer;
-+    device->UpdateWindowFramebuffer = SDL_LUMIA_UpdateWindowFramebuffer;
-+    device->DestroyWindowFramebuffer = SDL_LUMIA_DestroyWindowFramebuffer;
-+    device->free = LUMIA_DeleteDevice;
++    device->VideoInit = LUMINA_VideoInit;
++    device->VideoQuit = LUMINA_VideoQuit;
++    device->PumpEvents = LUMINA_PumpEvents;
++    device->CreateWindowFramebuffer = SDL_LUMINA_CreateWindowFramebuffer;
++    device->UpdateWindowFramebuffer = SDL_LUMINA_UpdateWindowFramebuffer;
++    device->DestroyWindowFramebuffer = SDL_LUMINA_DestroyWindowFramebuffer;
++    device->free = LUMINA_DeleteDevice;
 +
 +    return device;
 +}
 +
-+VideoBootStrap LUMIA_bootstrap = {
-+    LUMIAVID_DRIVER_NAME, "SDL LuminaOS framebuffer driver",
-+    LUMIA_CreateDevice,
++VideoBootStrap LUMINA_bootstrap = {
++    LUMINAVID_DRIVER_NAME, "SDL LuminaOS framebuffer driver",
++    LUMINA_CreateDevice,
 +    NULL,  /* no ShowMessageBox */
 +    true   /* preferred on LuminaOS */
 +};
 +
 +/* ---- init / quit ------------------------------------------------------- */
-+static bool LUMIA_SetRelativeMouseMode(bool enabled)
++static bool LUMINA_SetRelativeMouseMode(bool enabled)
 +{
 +    (void)enabled;
 +    return true; /* relative mode unsupported; absolute mouse only */
 +}
 +
-+bool LUMIA_VideoInit(SDL_VideoDevice *_this)
++bool LUMINA_VideoInit(SDL_VideoDevice *_this)
 +{
 +    SDL_DisplayMode mode;
 +
@@ -980,8 +980,8 @@ index 0000000..f680067
 +
 +    SDL_zero(mode);
 +    mode.format = SDL_PIXELFORMAT_XRGB8888;
-+    mode.w = lumia_gfx_w();
-+    mode.h = lumia_gfx_h();
++    mode.w = lumina_gfx_w();
++    mode.h = lumina_gfx_h();
 +    if (mode.w <= 0 || mode.h <= 0) {
 +        mode.w = 1024;
 +        mode.h = 768;
@@ -990,52 +990,52 @@ index 0000000..f680067
 +        return false;
 +    }
 +
-+    SDL_GetMouse()->SetRelativeMouseMode = LUMIA_SetRelativeMouseMode;
++    SDL_GetMouse()->SetRelativeMouseMode = LUMINA_SetRelativeMouseMode;
 +    return true;
 +}
 +
-+void LUMIA_VideoQuit(SDL_VideoDevice *_this)
++void LUMINA_VideoQuit(SDL_VideoDevice *_this)
 +{
 +    (void)_this;
 +}
 +
-+#endif /* SDL_VIDEO_DRIVER_LUMIA */
-diff --git a/src/video/lumia/SDL_lumiavideo.h b/src/video/lumia/SDL_lumiavideo.h
++#endif /* SDL_VIDEO_DRIVER_LUMINA */
+diff --git a/src/video/lumina/SDL_luminavideo.h b/src/video/lumina/SDL_luminavideo.h
 new file mode 100644
-index 0000000..ad8d3ba
+index 0000000..ba787bc
 --- /dev/null
-+++ b/src/video/lumia/SDL_lumiavideo.h
++++ b/src/video/lumina/SDL_luminavideo.h
 @@ -0,0 +1,25 @@
 +/*
 +  LuminaOS SDL3 video driver - internal header.
 +*/
-+#ifndef SDL_lumiavideo_h_
-+#define SDL_lumiavideo_h_
++#ifndef SDL_luminavideo_h_
++#define SDL_luminavideo_h_
 +
 +#include "../SDL_sysvideo.h"
 +
 +/* Property attached to an SDL_Window holding its software surface. */
-+#define LUMIA_SURFACE "SDL.internal.window.surface"
++#define LUMINA_SURFACE "SDL.internal.window.surface"
 +
-+/* Bootstrap declared in SDL_lumiavideo.c, registered in SDL_video.c. */
-+extern VideoBootStrap LUMIA_bootstrap;
++/* Bootstrap declared in SDL_luminavideo.c, registered in SDL_video.c. */
++extern VideoBootStrap LUMINA_bootstrap;
 +
-+/* Framebuffer callbacks (SDL_lumiaframebuffer.c). */
-+extern bool SDL_LUMIA_CreateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
++/* Framebuffer callbacks (SDL_luminaframebuffer.c). */
++extern bool SDL_LUMINA_CreateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
 +                                              SDL_PixelFormat *format, void **pixels, int *pitch);
-+extern bool SDL_LUMIA_UpdateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
++extern bool SDL_LUMINA_UpdateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
 +                                              const SDL_Rect *rects, int numrects);
-+extern void SDL_LUMIA_DestroyWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window);
++extern void SDL_LUMINA_DestroyWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window);
 +
-+/* Event pump (SDL_lumiaevents.c). */
-+extern void LUMIA_PumpEvents(SDL_VideoDevice *_this);
++/* Event pump (SDL_luminaevents.c). */
++extern void LUMINA_PumpEvents(SDL_VideoDevice *_this);
 +
-+#endif /* SDL_lumiavideo_h_ */
-diff --git a/src/video/lumia/lumia_syscall.h b/src/video/lumia/lumia_syscall.h
++#endif /* SDL_luminavideo_h_ */
+diff --git a/src/video/lumina/lumina_syscall.h b/src/video/lumina/lumina_syscall.h
 new file mode 100644
-index 0000000..2b40227
+index 0000000..fad2d59
 --- /dev/null
-+++ b/src/video/lumia/lumia_syscall.h
++++ b/src/video/lumina/lumina_syscall.h
 @@ -0,0 +1,111 @@
 +/*
 +  LuminaOS syscall wrappers for the SDL3 port.
@@ -1044,60 +1044,60 @@ index 0000000..2b40227
 +    rax = syscall number, rdi/rsi/rdx/rcx = arguments, rax = return value.
 +
 +  The SDK (LuminaOS-SDK/include/app_libc.h) already documents these; this
-+  header re-exposes them with a lumia_ prefix so they do not collide with
++  header re-exposes them with a lumina_ prefix so they do not collide with
 +  SDL's own namespace, and adds the few extra calls the port needs.
 +*/
-+#ifndef LUMIA_SYSCALL_H
-+#define LUMIA_SYSCALL_H
++#ifndef LUMINA_SYSCALL_H
++#define LUMINA_SYSCALL_H
 +
 +#include <stdint.h>
 +
-+#define LUMIA_SYSCALL_EXIT            0
-+#define LUMIA_SYSCALL_PUTPIXEL        1
-+#define LUMIA_SYSCALL_FILL_RECT       2
-+#define LUMIA_SYSCALL_DRAW_RECT       3
-+#define LUMIA_SYSCALL_DRAW_CHAR       4
-+#define LUMIA_SYSCALL_DRAW_TEXT       5
-+#define LUMIA_SYSCALL_GFX_CLEAR       6
-+#define LUMIA_SYSCALL_GFX_FLUSH       7
-+#define LUMIA_SYSCALL_GFX_W           8
-+#define LUMIA_SYSCALL_GFX_H           9
-+#define LUMIA_SYSCALL_GETCHAR         10
-+#define LUMIA_SYSCALL_GETCHAR_NB      11
-+#define LUMIA_SYSCALL_MOUSE_X         12
-+#define LUMIA_SYSCALL_MOUSE_Y         13
-+#define LUMIA_SYSCALL_MOUSE_L         14
-+#define LUMIA_SYSCALL_MOUSE_R         15
-+#define LUMIA_SYSCALL_MOUSE_CLICK     16
-+#define LUMIA_SYSCALL_FILE_READ       17
-+#define LUMIA_SYSCALL_FILE_WRITE      18
-+#define LUMIA_SYSCALL_FILE_LIST       19
-+#define LUMIA_SYSCALL_SLEEP           20
-+#define LUMIA_SYSCALL_CURSOR          21
-+#define LUMIA_SYSCALL_WIN_INFO        22
-+#define LUMIA_SYSCALL_SYSINFO         23
-+#define LUMIA_SYSCALL_WIN_SHOULD_CLOSE 24
-+#define LUMIA_SYSCALL_OPEN_FILE       25
-+#define LUMIA_SYSCALL_GET_OPEN_FILE   26
-+#define LUMIA_SYSCALL_WIN_MINIMIZED   27
-+#define LUMIA_SYSCALL_MINIMIZE        28
-+#define LUMIA_SYSCALL_GET_TICKS       29
-+#define LUMIA_SYSCALL_PIPE            30
-+#define LUMIA_SYSCALL_PIPE_READ       31
-+#define LUMIA_SYSCALL_PIPE_WRITE      32
-+#define LUMIA_SYSCALL_CLOSE           33
-+#define LUMIA_SYSCALL_SPAWN           34
-+#define LUMIA_SYSCALL_GETARG          35
-+#define LUMIA_SYSCALL_GETPID          36
-+#define LUMIA_SYSCALL_WAIT            37
-+#define LUMIA_SYSCALL_LIST_PROCS      38
-+#define LUMIA_SYSCALL_YIELD           39
++#define LUMINA_SYSCALL_EXIT            0
++#define LUMINA_SYSCALL_PUTPIXEL        1
++#define LUMINA_SYSCALL_FILL_RECT       2
++#define LUMINA_SYSCALL_DRAW_RECT       3
++#define LUMINA_SYSCALL_DRAW_CHAR       4
++#define LUMINA_SYSCALL_DRAW_TEXT       5
++#define LUMINA_SYSCALL_GFX_CLEAR       6
++#define LUMINA_SYSCALL_GFX_FLUSH       7
++#define LUMINA_SYSCALL_GFX_W           8
++#define LUMINA_SYSCALL_GFX_H           9
++#define LUMINA_SYSCALL_GETCHAR         10
++#define LUMINA_SYSCALL_GETCHAR_NB      11
++#define LUMINA_SYSCALL_MOUSE_X         12
++#define LUMINA_SYSCALL_MOUSE_Y         13
++#define LUMINA_SYSCALL_MOUSE_L         14
++#define LUMINA_SYSCALL_MOUSE_R         15
++#define LUMINA_SYSCALL_MOUSE_CLICK     16
++#define LUMINA_SYSCALL_FILE_READ       17
++#define LUMINA_SYSCALL_FILE_WRITE      18
++#define LUMINA_SYSCALL_FILE_LIST       19
++#define LUMINA_SYSCALL_SLEEP           20
++#define LUMINA_SYSCALL_CURSOR          21
++#define LUMINA_SYSCALL_WIN_INFO        22
++#define LUMINA_SYSCALL_SYSINFO         23
++#define LUMINA_SYSCALL_WIN_SHOULD_CLOSE 24
++#define LUMINA_SYSCALL_OPEN_FILE       25
++#define LUMINA_SYSCALL_GET_OPEN_FILE   26
++#define LUMINA_SYSCALL_WIN_MINIMIZED   27
++#define LUMINA_SYSCALL_MINIMIZE        28
++#define LUMINA_SYSCALL_GET_TICKS       29
++#define LUMINA_SYSCALL_PIPE            30
++#define LUMINA_SYSCALL_PIPE_READ       31
++#define LUMINA_SYSCALL_PIPE_WRITE      32
++#define LUMINA_SYSCALL_CLOSE           33
++#define LUMINA_SYSCALL_SPAWN           34
++#define LUMINA_SYSCALL_GETARG          35
++#define LUMINA_SYSCALL_GETPID          36
++#define LUMINA_SYSCALL_WAIT            37
++#define LUMINA_SYSCALL_LIST_PROCS      38
++#define LUMINA_SYSCALL_YIELD           39
 +
 +typedef struct {
 +    int win_x, win_y, win_w, win_h;
 +    int client_x, client_y, client_w, client_h;
 +    int close_x, close_y, close_w, close_h;
-+} lumia_win_info_t;
++} lumina_win_info_t;
 +
 +typedef struct {
 +    uint32_t mem_total_kb;
@@ -1105,16 +1105,16 @@ index 0000000..2b40227
 +    uint32_t mem_used_kb;
 +    uint32_t heap_free_kb;
 +    uint32_t heap_used_kb;
-+} lumia_sysinfo_t;
++} lumina_sysinfo_t;
 +
 +typedef struct {
 +    char name[12];
 +    uint8_t attr;
 +    uint8_t pad;
 +    uint32_t size;
-+} __attribute__((packed)) lumia_dir_entry_t;
++} __attribute__((packed)) lumina_dir_entry_t;
 +
-+static inline long lumia_syscall5(long n, long a1, long a2, long a3, long a4)
++static inline long lumina_syscall5(long n, long a1, long a2, long a3, long a4)
 +{
 +    long r;
 +    __asm__ volatile (
@@ -1125,26 +1125,26 @@ index 0000000..2b40227
 +    return r;
 +}
 +
-+static inline void  lumia_sys_exit(void)                        { lumia_syscall5(LUMIA_SYSCALL_EXIT, 0, 0, 0, 0); }
-+static inline void  lumia_gfx_putpixel(int x, int y, uint32_t c){ lumia_syscall5(LUMIA_SYSCALL_PUTPIXEL, x, y, (long)c, 0); }
-+static inline void  lumia_gfx_fill_rect(int x, int y, int w, int h, uint32_t c) { lumia_syscall5(LUMIA_SYSCALL_FILL_RECT, x, y, w | ((long)h << 16), (long)c); }
-+static inline void  lumia_gfx_draw_text(int x, int y, const char *s, uint32_t c) { lumia_syscall5(LUMIA_SYSCALL_DRAW_TEXT, x, y, (long)s, (long)c); }
-+static inline void  lumia_gfx_clear(uint32_t c)                 { lumia_syscall5(LUMIA_SYSCALL_GFX_CLEAR, (long)c, 0, 0, 0); }
-+static inline void  lumia_gfx_flush(void)                       { lumia_syscall5(LUMIA_SYSCALL_GFX_FLUSH, 0, 0, 0, 0); }
-+static inline int   lumia_gfx_w(void)                           { return (int)lumia_syscall5(LUMIA_SYSCALL_GFX_W, 0, 0, 0,0); }
-+static inline int   lumia_gfx_h(void)                           { return (int)lumia_syscall5(LUMIA_SYSCALL_GFX_H, 0, 0, 0,0); }
-+static inline int   lumia_getchar_nb(void)                      { return (int)lumia_syscall5(LUMIA_SYSCALL_GETCHAR_NB, 0, 0, 0,0); }
-+static inline int   lumia_mouse_x(void)                         { return (int)lumia_syscall5(LUMIA_SYSCALL_MOUSE_X, 0, 0, 0,0); }
-+static inline int   lumia_mouse_y(void)                         { return (int)lumia_syscall5(LUMIA_SYSCALL_MOUSE_Y, 0, 0, 0,0); }
-+static inline int   lumia_mouse_left(void)                      { return (int)lumia_syscall5(LUMIA_SYSCALL_MOUSE_L, 0, 0, 0,0); }
-+static inline int   lumia_mouse_right(void)                     { return (int)lumia_syscall5(LUMIA_SYSCALL_MOUSE_R, 0, 0, 0,0); }
-+static inline int   lumia_mouse_click(void)                     { return (int)lumia_syscall5(LUMIA_SYSCALL_MOUSE_CLICK, 0, 0, 0,0); }
-+static inline int   lumia_file_read(const char *p, void *b, int n)  { return (int)lumia_syscall5(LUMIA_SYSCALL_FILE_READ, (long)p, (long)b, n, 0); }
-+static inline int   lumia_file_write(const char *p, const void *b, int n) { return (int)lumia_syscall5(LUMIA_SYSCALL_FILE_WRITE, (long)p, (long)b, n, 0); }
-+static inline int   lumia_file_list(void *buf, int n)           { return (int)lumia_syscall5(LUMIA_SYSCALL_FILE_LIST, (long)buf, 0, n, 0); }
-+static inline void  lumia_sys_sleep(int ms)                     { lumia_syscall5(LUMIA_SYSCALL_SLEEP, ms, 0, 0, 0); }
-+static inline uint32_t lumia_get_ticks(void)                    { return (uint32_t)lumia_syscall5(LUMIA_SYSCALL_GET_TICKS, 0, 0, 0, 0); }
-+static inline void  lumia_sys_win_info(lumia_win_info_t *info)  { lumia_syscall5(LUMIA_SYSCALL_WIN_INFO, (long)info, 0, 0, 0); }
-+static inline int   lumia_sys_win_should_close(void)            { return (int)lumia_syscall5(LUMIA_SYSCALL_WIN_SHOULD_CLOSE, 0, 0, 0,0); }
++static inline void  lumina_sys_exit(void)                        { lumina_syscall5(LUMINA_SYSCALL_EXIT, 0, 0, 0, 0); }
++static inline void  lumina_gfx_putpixel(int x, int y, uint32_t c){ lumina_syscall5(LUMINA_SYSCALL_PUTPIXEL, x, y, (long)c, 0); }
++static inline void  lumina_gfx_fill_rect(int x, int y, int w, int h, uint32_t c) { lumina_syscall5(LUMINA_SYSCALL_FILL_RECT, x, y, w | ((long)h << 16), (long)c); }
++static inline void  lumina_gfx_draw_text(int x, int y, const char *s, uint32_t c) { lumina_syscall5(LUMINA_SYSCALL_DRAW_TEXT, x, y, (long)s, (long)c); }
++static inline void  lumina_gfx_clear(uint32_t c)                 { lumina_syscall5(LUMINA_SYSCALL_GFX_CLEAR, (long)c, 0, 0, 0); }
++static inline void  lumina_gfx_flush(void)                       { lumina_syscall5(LUMINA_SYSCALL_GFX_FLUSH, 0, 0, 0, 0); }
++static inline int   lumina_gfx_w(void)                           { return (int)lumina_syscall5(LUMINA_SYSCALL_GFX_W, 0, 0, 0,0); }
++static inline int   lumina_gfx_h(void)                           { return (int)lumina_syscall5(LUMINA_SYSCALL_GFX_H, 0, 0, 0,0); }
++static inline int   lumina_getchar_nb(void)                      { return (int)lumina_syscall5(LUMINA_SYSCALL_GETCHAR_NB, 0, 0, 0,0); }
++static inline int   lumina_mouse_x(void)                         { return (int)lumina_syscall5(LUMINA_SYSCALL_MOUSE_X, 0, 0, 0,0); }
++static inline int   lumina_mouse_y(void)                         { return (int)lumina_syscall5(LUMINA_SYSCALL_MOUSE_Y, 0, 0, 0,0); }
++static inline int   lumina_mouse_left(void)                      { return (int)lumina_syscall5(LUMINA_SYSCALL_MOUSE_L, 0, 0, 0,0); }
++static inline int   lumina_mouse_right(void)                     { return (int)lumina_syscall5(LUMINA_SYSCALL_MOUSE_R, 0, 0, 0,0); }
++static inline int   lumina_mouse_click(void)                     { return (int)lumina_syscall5(LUMINA_SYSCALL_MOUSE_CLICK, 0, 0, 0,0); }
++static inline int   lumina_file_read(const char *p, void *b, int n)  { return (int)lumina_syscall5(LUMINA_SYSCALL_FILE_READ, (long)p, (long)b, n, 0); }
++static inline int   lumina_file_write(const char *p, const void *b, int n) { return (int)lumina_syscall5(LUMINA_SYSCALL_FILE_WRITE, (long)p, (long)b, n, 0); }
++static inline int   lumina_file_list(void *buf, int n)           { return (int)lumina_syscall5(LUMINA_SYSCALL_FILE_LIST, (long)buf, 0, n, 0); }
++static inline void  lumina_sys_sleep(int ms)                     { lumina_syscall5(LUMINA_SYSCALL_SLEEP, ms, 0, 0, 0); }
++static inline uint32_t lumina_get_ticks(void)                    { return (uint32_t)lumina_syscall5(LUMINA_SYSCALL_GET_TICKS, 0, 0, 0, 0); }
++static inline void  lumina_sys_win_info(lumina_win_info_t *info)  { lumina_syscall5(LUMINA_SYSCALL_WIN_INFO, (long)info, 0, 0, 0); }
++static inline int   lumina_sys_win_should_close(void)            { return (int)lumina_syscall5(LUMINA_SYSCALL_WIN_SHOULD_CLOSE, 0, 0, 0,0); }
 +
-+#endif /* LUMIA_SYSCALL_H */
++#endif /* LUMINA_SYSCALL_H */
