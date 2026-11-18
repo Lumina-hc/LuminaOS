@@ -1,0 +1,59 @@
+LuminaOS
+Copyright (C) 2026 LuminaStudio and LuminaOS contributors
+
+This product includes third-party software. The notices below are provided
+in accordance with the respective licenses.
+
+================================================================================
+SDL3 (Simple DirectMedia Layer 3) - LUMIA platform port
+================================================================================
+
+  Copyright (C) Sam Lantinga and SDL contributors
+  License: zlib
+  Upstream: https://github.com/libsdl-org/SDL
+
+  MODIFIED SOURCE NOTICE:
+  The SDL3 sources used by this project are NOT the original upstream
+  software. A LUMIA platform port is applied to upstream SDL3 (commit
+  fda4ece) by ports/sdl3/patches/0001-lumia-port.patch before building.
+  The port was written for LuminaOS and is not affiliated with or endorsed
+  by the SDL project.
+
+  The prebuilt binary ports/sdl3/lib/libSDL3.a and any application or image
+  that statically links it (for example ports/sdl3/demo/demo.elf and the
+  applications shipped on the LuminaOS data disk) contain code derived from
+  SDL3 under the zlib license.
+
+  The full zlib license text is distributed with the SDL3 sources in
+  third_party/SDL/LICENSE.txt (fetch it with
+  "git submodule update --init third_party/SDL"), and is reproduced below:
+
+  Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
+
+  This software is provided 'as-is', without any express or implied
+  warranty.  In no event will the authors be held liable for any damages
+  arising from the use of this software.
+
+  Permission is granted to anyone to use this software for any purpose,
+  including commercial applications, and to alter it and redistribute it
+  freely, subject to the following restrictions:
+
+  1. The origin of this software must not be misrepresented; you must not
+     claim that you wrote the original software. If you use this software
+     in a product, an acknowledgment in the product documentation would be
+     appreciated but is not required.
+  2. Altered source versions must be plainly marked as such, and must not be
+     misrepresented as being the original software.
+  3. This notice may not be removed or altered from any source distribution.
+
+================================================================================
+LuminaOS-SDK
+================================================================================
+
+  Copyright (C) 2026 LuminaStudio and LuminaOS contributors
+  License: Apache License 2.0
+  Source: https://github.com/Lumina-hc/LuminaOS-SDK
+
+  The SDK is vendored as the third_party/LuminaOS-SDK submodule and is part
+  of the same project; it is listed here so that binary distributions
+  include the complete attribution trail.
